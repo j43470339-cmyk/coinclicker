@@ -1,0 +1,2009 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Coin Clicker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+/* Layout: three-column game table (ledger | coin stage | market). Whole palette re-tints with each era. */
+:root {
+  --bg: #16120d;
+  --panel: #201a12;
+  --line: #3b3122;
+  --fg: #f3ead9;
+  --mute: #a89d88;
+  --accent: #e0a458;
+  --accent-ink: #1a1206;
+  --coin-a: #c9843a;
+  --coin-b: #6e3f17;
+  --coin-rim: #f0c987;
+  --good: #7bd389;
+  --warn: #f0c14b;
+  --bad: #ef6b5b;
+  --tok: #b58cff;
+  --tok-ink: #170d2b;
+  --f-display: 'Bricolage Grotesque', 'Trebuchet MS', sans-serif;
+  --f-body: 'Figtree', 'Segoe UI', system-ui, sans-serif;
+  --f-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--f-body);
+  font-size: 15px;
+  line-height: 1.45;
+  transition: background-color .9s ease;
+  -webkit-user-select: none;
+  user-select: none;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding-block: 18px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.top {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 6px 16px; margin-bottom: 16px;
+}
+.brand { font-family: var(--f-display); font-weight: 800; font-size: 1.6rem; letter-spacing: -.02em; margin: 0; }
+.brand small { font-family: var(--f-mono); font-weight: 400; font-size: .72rem; color: var(--mute); letter-spacing: .04em; margin-left: 10px; text-transform: uppercase; }
+.savestate { font-family: var(--f-mono); font-size: .72rem; color: var(--mute); }
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 240px) minmax(0, 1fr) minmax(0, 340px) minmax(0, 330px);
+  grid-template-areas: "ledger stage market side";
+  gap: 16px;
+  align-items: start;
+}
+.ledger { grid-area: ledger; }
+.stage  { grid-area: stage; }
+.market { grid-area: market; }
+.side   { grid-area: side; display: flex; flex-direction: column; gap: 16px; }
+/* Side columns scroll on their own so the whole game fits on one screen. */
+.ledger, .market, .side {
+  max-height: calc(100dvh - 104px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+@media (max-width: 1240px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 330px) minmax(0, 310px);
+    grid-template-areas: "stage market side" "ledger market side";
+  }
+}
+@media (max-width: 800px) {
+  .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "stage" "market" "side" "ledger"; }
+  .ledger, .market, .side { max-height: none; overflow: visible; }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px;
+  display: flex; flex-direction: column; gap: 16px;
+  transition: background-color .9s ease, border-color .9s ease;
+  min-width: 0;
+}
+.panel h2 {
+  margin: 0; font-family: var(--f-display); font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em;
+}
+.eyebrow { font-family: var(--f-mono); font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; color: var(--mute); }
+
+/* Stage */
+.stage { display: flex; flex-direction: column; align-items: center; gap: 14px; min-width: 0; }
+.readout { text-align: center; width: 100%; }
+.balance {
+  font-family: var(--f-mono); font-weight: 700; font-size: clamp(2.2rem, 7vw, 3.4rem);
+  color: var(--accent); line-height: 1.05; letter-spacing: -.03em; font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.currency { font-family: var(--f-display); font-size: .95rem; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); margin-top: 4px; }
+.rates { margin-top: 6px; display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 18px; font-family: var(--f-mono); font-size: .9rem; font-variant-numeric: tabular-nums; }
+.rates .cps { color: var(--good); }
+.rates .clk { color: var(--fg); }
+.rates span span { color: var(--mute); font-size: .76rem; }
+
+.pad { position: relative; width: min(340px, 100%); aspect-ratio: 1; flex: none; }
+.coin {
+  position: absolute; inset: 50% auto auto 50%; width: 220px; height: 220px; margin: -110px 0 0 -110px;
+  border-radius: 50%; cursor: pointer; padding: 0;
+  background: radial-gradient(circle at 35% 30%, var(--coin-a) 0%, var(--coin-b) 100%);
+  border: 8px solid var(--coin-rim);
+  box-shadow: 0 14px 34px rgba(0,0,0,.55), inset 0 0 0 1px rgba(0,0,0,.25);
+  transition: transform .06s ease, background .9s ease, border-color .9s ease;
+  display: grid; place-items: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.coin::before {
+  content: ""; position: absolute; inset: 14px; border-radius: 50%;
+  border: 2px dashed rgba(0,0,0,.28);
+}
+.coin:active { transform: scale(.95); }
+.coin-num {
+  font-family: var(--f-display); font-weight: 800; font-size: 4.2rem; letter-spacing: -.04em;
+  color: rgba(0,0,0,.32); text-shadow: 0 1px 0 rgba(255,255,255,.22); pointer-events: none;
+}
+.float {
+  position: absolute; pointer-events: none; font-family: var(--f-mono); font-weight: 700; font-size: 1.05rem;
+  color: var(--fg); text-shadow: 0 2px 6px rgba(0,0,0,.7);
+  transform: translate(-50%, -50%);
+  animation: floatUp .9s ease-out forwards; z-index: 5; white-space: nowrap;
+}
+@keyframes floatUp {
+  from { opacity: 1; transform: translate(-50%, -50%); }
+  to { opacity: 0; transform: translate(-50%, -190%); }
+}
+.anomaly {
+  position: absolute; width: 50px; height: 50px; border-radius: 50%; padding: 0; cursor: pointer; z-index: 6;
+  background: radial-gradient(circle at 35% 30%, #c79bff 0%, #4b1f94 100%);
+  border: 3px solid #eadcff;
+  box-shadow: 0 0 22px #a76bff;
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse { 50% { transform: scale(1.14); box-shadow: 0 0 34px #c79bff; } }
+.coin-name { font-family: var(--f-mono); font-size: .76rem; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); text-align: center; }
+.era-card {
+  width: min(440px, 100%); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  transition: background-color .9s ease, border-color .9s ease;
+}
+.era-next { font-family: var(--f-display); font-weight: 700; font-size: 1.05rem; }
+.era-perk { font-size: .78rem; color: var(--mute); margin-top: 2px; }
+.hint { font-size: .82rem; color: var(--mute); text-align: center; min-height: 1.3em; }
+.cap-alert {
+  background: var(--bad); color: #20090a; font-weight: 700; font-size: .85rem;
+  padding: 5px 14px; border-radius: 6px; text-align: center;
+}
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tab {
+  flex: 1; padding: 9px 10px; background: transparent; border: 0; color: var(--mute); cursor: pointer;
+  font-weight: 700; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tabpanel { display: flex; flex-direction: column; gap: 14px; }
+
+dl.stats { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; font-size: .88rem; }
+dl.stats dt { color: var(--mute); }
+dl.stats dd { margin: 0; text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+dl.stats dd.tok { color: var(--tok); }
+
+.rebirth { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.btn-rebirth {
+  background: linear-gradient(135deg, var(--tok), #7e3fe0); color: var(--tok-ink);
+  border: 0; border-radius: 8px; padding: 13px; font-weight: 800; font-size: 1rem; cursor: pointer;
+}
+.btn-rebirth.armed { background: var(--warn); color: #241a00; }
+.btn-rebirth:disabled { background: var(--line); color: var(--mute); cursor: not-allowed; }
+.rebirth p { margin: 0; font-size: .8rem; color: var(--mute); }
+
+/* Trophies */
+.trophies { display: flex; flex-direction: column; gap: 8px; }
+.tcat > summary {
+  display: flex; justify-content: space-between; gap: 8px; cursor: pointer; list-style: none;
+  padding: 8px 10px; border-radius: 6px; background: rgba(0,0,0,.22);
+  font-family: var(--f-display); font-weight: 700; font-size: .92rem;
+}
+.tcat > summary::-webkit-details-marker { display: none; }
+.tcat > summary .tcount { font-family: var(--f-mono); font-weight: 400; font-size: .74rem; color: var(--mute); align-self: center; }
+.tcat[open] > summary { margin-bottom: 6px; }
+.tcat .trophy { margin-top: 6px; }
+.trophy { padding: 8px 10px; border-radius: 6px; background: rgba(0,0,0,.18); border-left: 3px solid var(--line); font-size: .84rem; }
+.trophy b { display: block; }
+.trophy span { color: var(--mute); }
+.trophy.on { border-left-color: var(--good); }
+.trophy:not(.on) b { color: var(--mute); }
+
+/* Market */
+.modes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.mode, .seg-btn {
+  background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 11px; cursor: pointer;
+  font-family: var(--f-mono); font-size: .8rem; color: var(--mute);
+}
+.mode[aria-pressed="true"], .seg-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.spacer { flex: 1; }
+.btn-ghost {
+  background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 11px; cursor: pointer;
+  font-size: .8rem; font-weight: 700; color: var(--fg);
+}
+.btn-ghost:hover { border-color: var(--accent); }
+.btn-ghost.on { border-color: var(--good); color: var(--good); }
+.rows { display: flex; flex-direction: column; }
+.row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 11px 0; border-bottom: 1px solid var(--line);
+}
+.row:first-child { padding-top: 2px; }
+.row:last-child { border-bottom: 0; padding-bottom: 2px; }
+.row.locked { opacity: .4; }
+.row-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.row-name { font-family: var(--f-display); font-weight: 700; font-size: 1rem; }
+.row.tok .row-name { color: var(--tok); }
+.row-lvl { font-family: var(--f-mono); font-size: .74rem; color: var(--mute); }
+.row-eff { font-size: .82rem; font-family: var(--f-mono); font-variant-numeric: tabular-nums; color: var(--fg); }
+.row-sub { font-size: .76rem; color: var(--mute); margin-top: 2px; }
+.row-sub .ms { color: var(--warn); }
+.buy {
+  background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 7px; padding: 7px 12px; cursor: pointer;
+  font-family: var(--f-mono); font-weight: 700; font-size: .85rem; min-width: 96px; text-align: right;
+  display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; transition: background-color .9s ease;
+}
+.buy small { font-weight: 400; font-size: .68rem; opacity: .8; }
+.buy.tok { background: var(--tok); color: var(--tok-ink); }
+.buy:disabled { background: var(--line); color: var(--mute); cursor: not-allowed; }
+
+.devbox { margin-top: 22px; border: 1px dashed var(--line); border-radius: 10px; padding: 12px 16px; color: var(--mute); }
+.devbox summary { cursor: pointer; font-family: var(--f-mono); font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; }
+.devwrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-top: 14px; }
+.devgroup { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.devgroup h3 { margin: 0; font-family: var(--f-mono); font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 400; }
+.devrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.devrow > input { flex: 1 1 90px; }
+.devbox input, .devbox select, .devbox textarea {
+  background: rgba(0,0,0,.28); border: 1px solid var(--line); color: var(--fg); border-radius: 6px;
+  padding: 6px 9px; font-family: var(--f-mono); font-size: .8rem; min-width: 0;
+  user-select: text; -webkit-user-select: text;
+}
+.devbox textarea { width: 100%; resize: vertical; }
+.devbox .danger { border-color: var(--bad); color: var(--bad); }
+.devread { margin: 0; font-family: var(--f-mono); font-size: .74rem; line-height: 1.55; color: var(--fg); background: rgba(0,0,0,.25); border-radius: 6px; padding: 10px; overflow-x: auto; user-select: text; -webkit-user-select: text; }
+.rb-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.rb-tok { font-family: var(--f-mono); font-weight: 700; color: var(--tok); font-size: 1.1rem; margin-left: 4px; }
+.bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--tok); width: 0; transition: width .2s linear; }
+.rebirth-note { margin: 0; font-size: .8rem; color: var(--mute); }
+
+.toasts {
+  position: fixed; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 0 max(16px, env(safe-area-inset-left, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)); pointer-events: none; z-index: 20;
+}
+.toast {
+  background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 9px 14px; font-size: .88rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5); max-width: 440px; animation: toastIn .25s ease-out;
+}
+.toast b { color: var(--accent); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } }
+
+.top-right { display: flex; align-items: center; gap: 12px; }
+.overlay {
+  position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.62);
+  display: grid; place-items: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.modal {
+  width: min(460px, 100%); max-height: 100%; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px;
+  display: flex; flex-direction: column; gap: 20px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.55);
+}
+.modal-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.modal-head h2 { font-size: 1.2rem; }
+.set-group { display: flex; flex-direction: column; gap: 12px; }
+.set-group h3 { margin: 0; font-family: var(--f-mono); font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 400; }
+.switch-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; cursor: pointer; }
+.switch-row small { display: block; color: var(--mute); font-size: .78rem; }
+.slider-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 3.2em; gap: 12px; align-items: center; }
+.slider-row output { font-family: var(--f-mono); font-size: .82rem; text-align: right; }
+.modal input[type="checkbox"], .modal input[type="range"] { accent-color: var(--accent); }
+.modal input[type="checkbox"] { width: 20px; height: 20px; flex: none; }
+.modal input[type="range"] { width: 100%; }
+.modal input:disabled { opacity: .45; }
+.preview { margin: 0; font-family: var(--f-mono); font-size: .8rem; color: var(--fg); background: rgba(0,0,0,.25); border-radius: 6px; padding: 10px; overflow-wrap: anywhere; line-height: 1.6; }
+.modal.wide { width: min(980px, 100%); }
+.board-status { margin: 0; font-size: .84rem; color: var(--mute); }
+.board-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; }
+.board { min-width: 0; }
+.board h3 { margin: 0 0 6px; font-family: var(--f-display); font-size: 1rem; }
+.board ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.board li { display: grid; grid-template-columns: 2.2em minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: .86rem; }
+.board li:last-child { border-bottom: 0; }
+.board .rk { font-family: var(--f-mono); color: var(--mute); }
+.board .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board .vl { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.board li.me { color: var(--accent); font-weight: 700; }
+.board li.you-row { border-top: 1px dashed var(--line); margin-top: 4px; }
+.board .empty { color: var(--mute); font-size: .84rem; margin: 0; }
+:root[data-vfx="off"] .anomaly,
+:root[data-vfx="off"] .toast,
+:root[data-vfx="off"] .float { animation: none; }
+:root[data-vfx="off"] .float { display: none; }
+:root[data-vfx="off"] body,
+:root[data-vfx="off"] .panel,
+:root[data-vfx="off"] .era-card,
+:root[data-vfx="off"] .coin,
+:root[data-vfx="off"] .buy,
+:root[data-vfx="off"] .bar i { transition: none; }
+:root[data-vfx="off"] .coin:active { transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anomaly { animation: none; }
+  .float, .toast { animation-duration: .01s; }
+  body, .panel, .coin, .buy { transition: none; }
+}
+.chal-banner{width:min(440px,100%);background:var(--tok);color:var(--tok-ink);font-weight:700;font-size:.85rem;padding:6px 14px;border-radius:6px;text-align:center}
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1 class="brand">Coin Clicker<small id="eraTag">Age I</small></h1>
+    <div class="top-right">
+      <span class="savestate" id="saveState">Autosave on</span>
+      <button class="btn-ghost" id="boardOpen">Leaderboards</button>
+      <button class="btn-ghost" id="setOpen">Settings</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="panel ledger">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tabLedger" aria-selected="true" aria-controls="panelLedger">Ledger</button>
+        <button class="tab" role="tab" id="tabTrophies" aria-selected="false" aria-controls="panelTrophies">Trophies <span id="trophyCount"></span></button>
+      </div>
+
+      <div class="tabpanel" id="panelLedger" role="tabpanel">
+        <dl class="stats">
+          <dt>Earned this run</dt><dd id="stRun">0</dd>
+          <dt>Earned all time</dt><dd id="stLife">0</dd>
+          <dt>Taps</dt><dd id="stClicks">0</dd>
+          <dt>Rebirths</dt><dd id="stRebirths">0</dd>
+          <dt>Anomalies caught</dt><dd id="stDm">0</dd>
+          <dt>Trophy bonus</dt><dd id="stTrophy">+0%</dd>
+          <dt>Challenge bonus</dt><dd id="stChal">+0%</dd>
+          <dt>Tokens</dt><dd class="tok" id="stTok">0</dd>
+        </dl>
+      </div>
+
+      <div class="tabpanel" id="panelTrophies" role="tabpanel" hidden>
+        <div class="trophies" id="trophyList"></div>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <div class="readout">
+        <div class="balance" id="bal">0</div>
+        <div class="currency" id="cur">Bronze Standard</div>
+        <div class="rates">
+          <span class="cps" id="cps">0 <span>per second</span></span>
+          <span class="clk" id="clk">+1 <span>per tap</span></span>
+        </div>
+      </div>
+      <div class="pad" id="pad">
+        <button class="coin" id="coin" aria-label="Tap the coin to earn currency"><span class="coin-num" id="coinNum">I</span></button>
+        <button class="anomaly" id="anomaly" hidden aria-label="Dark Matter anomaly. Click to collect."></button>
+      </div>
+      <div class="coin-name" id="coinName">Bronze coin</div>
+      <div class="era-card">
+        <div>
+          <div class="eyebrow">Next age</div>
+          <div class="era-next" id="eraNext">Iron Age</div>
+          <div class="era-perk" id="eraPerk"></div>
+        </div>
+        <button class="buy" id="eraBtn"><span id="eraCost">2.00k</span><small id="eraCur">Bronze Standard</small></button>
+      </div>
+      <div class="chal-banner" id="chalBanner" hidden></div>
+      <div class="cap-alert" id="capAlert" hidden>Tap limit reached (15 per second)</div>
+      <div class="hint">Catch anomalies within 10 seconds.</div>
+    </main>
+
+    <section class="market">
+      <div class="panel">
+        <div class="modes" id="modes">
+          <span class="eyebrow">Buy</span>
+          <button class="mode" data-m="1" aria-pressed="true">×1</button>
+          <button class="mode" data-m="10" aria-pressed="false">×10</button>
+          <button class="mode" data-m="100" aria-pressed="false">×100</button>
+          <button class="mode" data-m="0" aria-pressed="false">Max</button>
+        </div>
+        <div class="modes">
+          <button class="btn-ghost" id="buyBest">Spend it all</button>
+          <button class="btn-ghost" id="autoToggle" aria-pressed="false" hidden>Auto Buy: ON</button>
+        </div>
+        <div class="rows" id="marketRows"></div>
+      </div>
+
+      </section>
+
+    <section class="side">
+      <div class="panel">
+        <div>
+          <h2>Boosts</h2>
+          <p class="rebirth-note" id="boostNote" style="margin-top:4px">Kept through ages, reset by rebirth.</p>
+        </div>
+        <div class="rows" id="boostRows"></div>
+      </div>
+
+      <div class="panel" id="chalPanel">
+        <div>
+          <h2>Challenges</h2>
+          <p class="rebirth-note" id="chalNote" style="margin-top:4px"></p>
+        </div>
+        <div class="rows" id="chalRows"></div>
+      </div>
+
+      <div class="panel" id="shopPanel">
+        <div class="rb-head">
+          <h2 style="color:var(--tok)">Rebirth</h2>
+          <span class="eyebrow">Tokens<span class="rb-tok" id="rbTok">0</span></span>
+        </div>
+        <p class="rebirth-note">Resets everything except tokens, Matrix, trophies and challenge trophies.</p>
+        <div class="bar" aria-hidden="true"><i id="rbBar"></i></div>
+        <button class="btn-rebirth" id="rebirthBtn">Rebirth</button>
+        <p class="rebirth-note" id="rebirthInfo">Earn 500 in one run to rebirth.</p>
+        <div class="eyebrow">Dimensional Matrix</div>
+        <div class="rows" id="shopRows"></div>
+      </div>
+    </section>
+  </div>
+
+  <details class="devbox" id="dev">
+    <summary>Operator console</summary>
+    <div class="devwrap">
+
+      <div class="devgroup">
+        <h3>Currency</h3>
+        <div class="devrow">
+          <input id="dAmt" type="text" value="1e7" aria-label="Amount (accepts 5000, 1e9, 2.5b)" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="devrow">
+          <button class="btn-ghost" id="dAdd">Add</button>
+          <button class="btn-ghost" id="dSet">Set balance</button>
+          <button class="btn-ghost" id="dMul">Balance ×10</button>
+        </div>
+        <div class="devrow">
+          <button class="btn-ghost" id="dTokAdd">Add as tokens</button>
+          <button class="btn-ghost" id="dTokSet">Set tokens</button>
+        </div>
+      </div>
+
+      <div class="devgroup">
+        <h3>Time</h3>
+        <div class="devrow">
+          <button class="btn-ghost" id="dSkip1">Skip 1h</button>
+          <button class="btn-ghost" id="dSkip8">Skip 8h</button>
+          <button class="btn-ghost" id="dSkip24">Skip 24h</button>
+        </div>
+        <div class="devrow">
+          <label for="dSpeed" class="eyebrow">Game speed</label>
+          <select id="dSpeed" aria-label="Game speed">
+            <option value="1">×1</option><option value="5">×5</option><option value="20">×20</option><option value="100">×100</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="devgroup">
+        <h3>Progress</h3>
+        <div class="devrow">
+          <select id="dEra" aria-label="Era"></select>
+          <button class="btn-ghost" id="dEraGo">Jump to era</button>
+        </div>
+        <div class="devrow">
+          <input id="dLvl" type="text" value="25" aria-label="Level" autocomplete="off">
+          <button class="btn-ghost" id="dLvlGo">Set all levels</button>
+        </div>
+        <div class="devrow">
+          <button class="btn-ghost" id="dUnlock">Unlock all rows</button>
+          <button class="btn-ghost" id="dReady">Make rebirth ready</button>
+        </div>
+      </div>
+
+      <div class="devgroup">
+        <h3>Rebirth shop</h3>
+        <div class="devrow">
+          <button class="btn-ghost" id="dRbMax">Max Matrix</button>
+          <button class="btn-ghost" id="dRbReset">Reset Matrix</button>
+          <button class="btn-ghost" id="dAutoGive">Grant auto-buyer</button>
+          <button class="btn-ghost" id="dBoostMax">Max boosts</button>
+        </div>
+      </div>
+
+      <div class="devgroup">
+        <h3>Events and trophies</h3>
+        <div class="devrow">
+          <button class="btn-ghost" id="dDm">Spawn anomaly</button>
+          <button class="btn-ghost" id="dToast">Test toast</button>
+        </div>
+        <div class="devrow">
+          <button class="btn-ghost" id="dAchAll">Unlock all trophies</button>
+          <button class="btn-ghost" id="dAchNone">Lock all trophies</button>
+        </div>
+        <div class="devrow">
+          <button class="btn-ghost" id="dCps">Tap limit: on</button>
+        </div>
+      </div>
+
+      <div class="devgroup">
+        <h3>Save data</h3>
+        <div class="devrow">
+          <button class="btn-ghost" id="dSave">Save now</button>
+          <button class="btn-ghost" id="dExport">Export</button>
+          <button class="btn-ghost" id="dImport">Import</button>
+          <button class="btn-ghost danger" id="dWipe">Wipe save</button>
+        </div>
+        <textarea id="dBox" rows="3" aria-label="Save code" placeholder="Export fills this box. Paste a save code here and press Import." spellcheck="false"></textarea>
+      </div>
+
+      <div class="devgroup">
+        <h3>Live readout</h3>
+        <pre class="devread" id="dRead">Open to see live values.</pre>
+      </div>
+    </div>
+  </details>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<div class="overlay" id="boardOverlay" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="boardTitle">
+    <div class="modal-head">
+      <h2 id="boardTitle">Leaderboards</h2>
+      <button class="btn-ghost" id="boardClose">Close</button>
+    </div>
+    <p class="board-status" id="boardStatus">Connecting…</p>
+    <div class="board-grid" id="boardGrid"></div>
+  </div>
+</div>
+
+<div class="overlay" id="settingsOverlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="modal-head">
+      <h2 id="setTitle">Settings</h2>
+      <button class="btn-ghost" id="setClose">Close</button>
+    </div>
+
+    <div class="set-group">
+      <h3>Effects</h3>
+      <label class="switch-row" for="setVfx">
+        <span>Visual effects<small>Floating numbers, pulsing anomalies and smooth color changes.</small></span>
+        <input type="checkbox" id="setVfx">
+      </label>
+      <label class="switch-row" for="setSfx">
+        <span>Sound effects<small>Taps, purchases, anomalies, trophies and rebirths.</small></span>
+        <input type="checkbox" id="setSfx">
+      </label>
+      <div class="slider-row">
+        <label for="setVol">Volume</label>
+        <input type="range" id="setVol" min="0" max="100" step="1">
+        <output id="setVolOut" for="setVol">60%</output>
+      </div>
+      <div><button class="btn-ghost" id="setTest">Play test sound</button></div>
+    </div>
+
+    <div class="set-group">
+      <h3>Number format</h3>
+      <div class="modes">
+        <button class="seg-btn" data-n="letters" aria-pressed="true">Letters</button>
+        <button class="seg-btn" data-n="scientific" aria-pressed="false">Scientific</button>
+        <button class="seg-btn" data-n="engineering" aria-pressed="false">Exponent</button>
+      </div>
+      <p class="preview" id="notePreview"></p>
+    </div>
+
+    <div class="set-group">
+      <h3>Account</h3>
+      <p class="rebirth-note" id="acctInfo">Checking your account…</p>
+      <div class="devrow">
+        <button class="btn-ghost" id="cloudSave">Save to cloud</button>
+        <button class="btn-ghost" id="cloudLoad">Load from cloud</button>
+      </div>
+      <p class="rebirth-note" id="cloudInfo"></p>
+    </div>
+
+    <div class="set-group">
+      <h3>Leaderboards</h3>
+      <label class="switch-row" for="setBoard">
+        <span>Show me on leaderboards<small>Turning this off removes your entry.</small></span>
+        <input type="checkbox" id="setBoard">
+      </label>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- Data ---------- */
+  var SAVE_KEY = 'chronos-evolution-v2';
+  var SET_KEY = 'chronos-evolution-settings';
+  var settings = { vfx: true, sfx: true, volume: 60, notation: 'letters', board: true };
+  var actx = null;
+
+  function loadSettings() {
+    try {
+      var raw = localStorage.getItem(SET_KEY);
+      if (raw) {
+        var d = JSON.parse(raw);
+        if (typeof d.vfx === 'boolean') settings.vfx = d.vfx;
+        if (typeof d.sfx === 'boolean') settings.sfx = d.sfx;
+        if (typeof d.board === 'boolean') settings.board = d.board;
+        if (typeof d.volume === 'number' && isFinite(d.volume)) settings.volume = Math.max(0, Math.min(100, d.volume));
+        if (['letters', 'scientific', 'engineering'].indexOf(d.notation) >= 0) settings.notation = d.notation;
+        return;
+      }
+    } catch (err) {}
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) settings.vfx = false;
+    } catch (err) {}
+  }
+  function saveSettings() {
+    try { localStorage.setItem(SET_KEY, JSON.stringify(settings)); } catch (err) {}
+  }
+  function applySettings() {
+    document.documentElement.setAttribute('data-vfx', settings.vfx ? 'on' : 'off');
+    $('setVfx').checked = settings.vfx;
+    $('setSfx').checked = settings.sfx;
+    $('setBoard').checked = settings.board;
+    $('setVol').value = settings.volume;
+    $('setVol').disabled = !settings.sfx;
+    $('setVolOut').textContent = Math.round(settings.volume) + '%';
+    document.querySelectorAll('.seg-btn').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.n === settings.notation));
+    });
+    $('notePreview').textContent = [12345, 3.4e9, 7.2e15, 5.1e33, 9.9e59].map(function (x) { return fmt(x); }).join('    ');
+  }
+
+  function initAudio() {
+    if (!actx) {
+      try {
+        var C = window.AudioContext || window.webkitAudioContext;
+        if (C) actx = new C();
+      } catch (err) { actx = null; }
+    }
+    if (actx && actx.state === 'suspended') { try { actx.resume(); } catch (err) {} }
+  }
+  function tone(freq, dur, type, peak, delay, to) {
+    var t0 = actx.currentTime + (delay || 0);
+    var o = actx.createOscillator(), g = actx.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, t0);
+    if (to) o.frequency.exponentialRampToValueAtTime(to, t0 + dur);
+    var p = Math.max(0.0002, peak * settings.volume / 100);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(p, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(t0); o.stop(t0 + dur + 0.03);
+  }
+  function sfx(kind) {
+    if (!settings.sfx || settings.volume <= 0 || !actx) return;
+    try {
+      var i;
+      if (kind === 'tap') tone(340 + Math.random() * 90, 0.07, 'triangle', 0.3, 0, 200);
+      else if (kind === 'buy') { tone(520, 0.09, 'square', 0.12); tone(780, 0.13, 'square', 0.12, 0.07); }
+      else if (kind === 'spawn') tone(520, 0.3, 'sine', 0.35, 0, 1300);
+      else if (kind === 'catch') { [523, 659, 784, 1047].forEach(function (f, n) { tone(f, 0.16, 'triangle', 0.3, n * 0.06); }); }
+      else if (kind === 'trophy') { [784, 988, 1175].forEach(function (f, n) { tone(f, 0.22, 'triangle', 0.3, n * 0.09); }); }
+      else if (kind === 'era') { tone(330, 0.5, 'triangle', 0.35, 0, 660); tone(660, 0.35, 'triangle', 0.3, 0.35, 990); }
+      else if (kind === 'rebirth') { tone(180, 0.7, 'sawtooth', 0.2, 0, 900); tone(900, 0.45, 'sine', 0.3, 0.55); }
+    } catch (err) {}
+  }
+  /* ---------- Leaderboards (shared store, one document per player) ---------- */
+  var lb = { state: 'init', db: null, user: null, uid: null, canWrite: true, rows: [], ready: false, slow: false, err: null, lastSig: '', writing: false, rt: 0 };
+  function fmtPlayed(sec) {
+    sec = Math.floor(sec);
+    var d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+    if (d > 0) return d + 'd ' + h + 'h';
+    if (h > 0) return h + 'h ' + m + 'm';
+    if (m > 0) return m + 'm';
+    return sec + 's';
+  }
+  var BOARDS = [
+    { k: 'currency', t: 'Currency earned', f: function (v) { return fmt(v); } },
+    { k: 'tokens',   t: 'Tokens earned',   f: function (v) { return fmt(v); } },
+    { k: 'played',   t: 'Time played',     f: fmtPlayed },
+    { k: 'spent',    t: 'Currency spent',  f: function (v) { return fmt(v); } }
+  ];
+  function myScores() { return { tokens: S.tokensEarned, currency: S.life, played: Math.floor(S.played), spent: S.spent }; }
+
+  function submitScore() {
+    if (!lb.db || !lb.uid || !lb.canWrite || S.cheated || !settings.board || lb.writing || document.hidden) return;
+    var sc = myScores();
+    if (![sc.tokens, sc.currency, sc.played, sc.spent].every(function (x) { return isFinite(x); })) return;
+    var sig = JSON.stringify([sc.tokens, Math.floor(sc.currency), sc.played, Math.floor(sc.spent)]);
+    if (sig === lb.lastSig) return;
+    lb.writing = true;
+    sc.t = Date.now();
+    var done = function () { lb.writing = false; };
+    try {
+      lb.db.doc('scores/' + lb.uid).set(sc).then(function () { lb.lastSig = sig; done(); }, function (e) {
+        if (e && e.code === 'invalid_argument') lb.canWrite = false;
+        done(); renderBoards();
+      });
+    } catch (err) { done(); }
+  }
+
+  function initBoard() {
+    $('boardOpen').addEventListener('click', openBoards);
+    $('boardClose').addEventListener('click', closeBoards);
+    $('boardOverlay').addEventListener('click', function (e) { if (e.target === $('boardOverlay')) closeBoards(); });
+    $('cloudSave').addEventListener('click', cloudSave);
+    $('cloudLoad').addEventListener('click', cloudLoad);
+    if (!window.claude || !window.claude.use) {
+      lb.state = 'off';
+      $('boardOpen').hidden = true;
+      $('acctInfo').parentNode.hidden = true;
+      $('setBoard').closest('.set-group').hidden = true;
+      return;
+    }
+    Promise.all([window.claude.use('db'), window.claude.use('user')]).then(function (r) {
+      lb.db = r[0]; lb.user = r[1];
+      if (!lb.db || !lb.user) { lb.state = 'off'; renderBoards(); return; }
+      return lb.user.id().then(function (id) {
+        lb.uid = id;
+        return lb.user.can('data.write');
+      }).then(function (cw) {
+        lb.canWrite = cw !== false;
+        lb.state = 'on';
+        var timer = setTimeout(function () { lb.slow = true; renderBoards(); }, 10000);
+        lb.db.collection('scores').limit(500).onSnapshot(function (snap) {
+          clearTimeout(timer); lb.slow = false; lb.err = null; lb.ready = true;
+          lb.rows = snap.docs.map(function (d) {
+            var x = d.data() || {};
+            return { id: d.id, tokens: Number(x.tokens) || 0, currency: Number(x.currency) || 0, played: Number(x.played) || 0, spent: Number(x.spent) || 0 };
+          });
+          renderBoards();
+        }, function (e) { clearTimeout(timer); lb.err = (e && e.code) || 'error'; renderBoards(); });
+        submitScore();
+        setInterval(submitScore, 90000);
+      });
+    }).catch(function () { lb.state = 'off'; renderBoards(); });
+  }
+
+  /* ---------- Account (claude.ai sign-in) and cloud save ---------- */
+  var cloudArmed = 0;
+  function cloudRef() { return lb.db && lb.uid ? lb.db.doc('data/users/' + lb.uid + '/save') : null; }
+  function cloudMsg(t) { $('cloudInfo').textContent = t; }
+  function refreshAccount() {
+    var info = $('acctInfo'), ok = lb.state === 'on' && !!lb.uid;
+    $('cloudSave').disabled = !ok;
+    $('cloudLoad').disabled = !ok;
+    if (lb.state === 'init') { info.textContent = 'Checking your account…'; return; }
+    if (lb.state === 'off') { info.textContent = 'Accounts only work when this page is opened from claude.ai.'; cloudMsg(''); return; }
+    if (!lb.uid) { info.textContent = 'You are not signed in to claude.ai, so cloud saves are off.'; cloudMsg(''); return; }
+    lb.user.me().then(function (me) {
+      info.textContent = 'Signed in as ' + (me.name || 'your claude.ai account') + '. Cloud saves are private to this account.';
+    });
+    cloudRef().get().then(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      cloudMsg(d && d.t ? 'Last cloud save: ' + new Date(d.t).toLocaleString() : 'No cloud save yet.');
+    }, function () {});
+  }
+  function cloudSave() {
+    var ref = cloudRef();
+    if (!ref) return;
+    var data;
+    try { data = JSON.parse(JSON.stringify(S)); } catch (err) { cloudMsg('Could not read the save.'); return; }
+    data.t = Date.now();
+    ref.set(data).then(function () {
+      cloudMsg('Saved to the cloud at ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.');
+    }, function (e) {
+      cloudMsg(e && e.code === 'invalid_argument' ? 'Your access level does not allow cloud saves.' : 'Cloud save failed. Try again.');
+    });
+  }
+  function cloudLoad() {
+    var ref = cloudRef();
+    if (!ref) return;
+    var now = Date.now();
+    if (now > cloudArmed) { cloudArmed = now + 4000; cloudMsg('Click Load again to replace this save with your cloud save.'); return; }
+    cloudArmed = 0;
+    ref.get().then(function (snap) {
+      if (!snap.exists) { cloudMsg('There is no cloud save yet.'); return; }
+      S = normalize(JSON.parse(JSON.stringify(snap.data())));
+      shownEra = -1; shownCoin = -1; clickTimes = [];
+      renderTrophies(); applyEra(eraIdx()); update(); save();
+      lb.lastSig = ''; submitScore();
+      cloudMsg('Loaded your cloud save.');
+      toast('<b>Cloud save loaded.</b>');
+    }, function () { cloudMsg('Could not load the cloud save. Try again.'); });
+  }
+
+  function boardRow(rank, name, value, cls) {
+    var li = document.createElement('li');
+    if (cls) li.className = cls;
+    var a = document.createElement('span'); a.className = 'rk'; a.textContent = '#' + rank;
+    var b = document.createElement('span'); b.className = 'nm'; b.textContent = name;
+    var c = document.createElement('span'); c.className = 'vl'; c.textContent = value;
+    li.appendChild(a); li.appendChild(b); li.appendChild(c);
+    return li;
+  }
+
+  function renderBoards() {
+    if ($('boardOverlay').hidden) return;
+    var msg;
+    if (lb.state === 'init') msg = 'Connecting…';
+    else if (lb.state === 'off') msg = 'Leaderboards are not available in this view.';
+    else if (lb.err) msg = 'Could not load the leaderboard. Try reopening the page.';
+    else if (!lb.ready) msg = lb.slow ? 'Still connecting. Scores may be out of date.' : 'Loading scores…';
+    else if (S.cheated) msg = 'You used the operator console on this save, so your scores are not submitted. Wiping the save lets you compete again.';
+    else if (!lb.uid) msg = 'Sign in to appear on the leaderboards.';
+    else if (!lb.canWrite) msg = 'You have view-only access, so your scores are not submitted.';
+    else if (!settings.board) msg = 'You are hidden from the leaderboards. Turn this on in Settings.';
+    else msg = 'Updates live. Your scores are submitted about every 90 seconds.';
+    $('boardStatus').textContent = msg;
+    var grid = $('boardGrid');
+    if (lb.state !== 'on' || lb.err) { grid.innerHTML = ''; return; }
+
+    var mine = myScores();
+    var sets = BOARDS.map(function (b) {
+      return lb.rows.filter(function (r) { return r[b.k] > 0; }).sort(function (x, y) { return y[b.k] - x[b.k]; });
+    });
+    var ids = [];
+    sets.forEach(function (all) { all.slice(0, 10).forEach(function (r) { if (ids.indexOf(r.id) < 0) ids.push(r.id); }); });
+    var token = ++lb.rt;
+    var pp = ids.length && lb.user ? lb.user.profiles(ids) : Promise.resolve({});
+    pp.then(function (ps) {
+      if (token !== lb.rt || $('boardOverlay').hidden) return;
+      grid.innerHTML = '';
+      BOARDS.forEach(function (b, bi) {
+        var all = sets[bi];
+        var sec = document.createElement('section'); sec.className = 'board';
+        var h = document.createElement('h3'); h.textContent = b.t; sec.appendChild(h);
+        if (!all.length) {
+          var p = document.createElement('p'); p.className = 'empty'; p.textContent = 'No scores yet.';
+          sec.appendChild(p); grid.appendChild(sec); return;
+        }
+        var ol = document.createElement('ol');
+        var inTop = false;
+        all.slice(0, 10).forEach(function (r, i) {
+          var me = r.id === lb.uid;
+          if (me) inTop = true;
+          var nm = (ps[r.id] && ps[r.id].name) || (me ? 'You' : 'Someone');
+          ol.appendChild(boardRow(i + 1, me ? nm + ' (you)' : nm, b.f(r[b.k]), me ? 'me' : ''));
+        });
+        if (!inTop && lb.uid && lb.canWrite && settings.board && !S.cheated && mine[b.k] > 0) {
+          var rank = all.filter(function (r) { return r.id !== lb.uid && r[b.k] > mine[b.k]; }).length + 1;
+          ol.appendChild(boardRow(rank, 'You', b.f(mine[b.k]), 'me you-row'));
+        }
+        sec.appendChild(ol); grid.appendChild(sec);
+      });
+    });
+  }
+  function openBoards() { $('boardOverlay').hidden = false; $('boardClose').focus(); renderBoards(); }
+  function closeBoards() { $('boardOverlay').hidden = true; $('boardOpen').focus(); }
+
+  function openSettings() { $('settingsOverlay').hidden = false; $('setClose').focus(); refreshAccount(); }
+  function closeSettings() { $('settingsOverlay').hidden = true; $('setOpen').focus(); }
+  function initSettings() {
+    loadSettings();
+    $('setOpen').addEventListener('click', openSettings);
+    $('setClose').addEventListener('click', closeSettings);
+    $('settingsOverlay').addEventListener('click', function (e) { if (e.target === $('settingsOverlay')) closeSettings(); });
+    document.addEventListener('keydown', function (e) {
+      initAudio();
+      if (e.key === 'Escape') {
+        if (!$('settingsOverlay').hidden) closeSettings();
+        else if (!$('boardOverlay').hidden) closeBoards();
+      }
+    });
+    document.addEventListener('pointerdown', initAudio);
+    $('setVfx').addEventListener('change', function () { settings.vfx = $('setVfx').checked; saveSettings(); applySettings(); });
+    $('setSfx').addEventListener('change', function () { settings.sfx = $('setSfx').checked; saveSettings(); applySettings(); initAudio(); sfx('buy'); });
+    $('setBoard').addEventListener('change', function () {
+      settings.board = $('setBoard').checked; saveSettings(); applySettings();
+      if (!settings.board) {
+        if (lb.db && lb.uid) { try { lb.db.doc('scores/' + lb.uid).delete().catch(function () {}); } catch (err) {} }
+        lb.lastSig = '';
+      } else submitScore();
+      renderBoards();
+    });
+    $('setVol').addEventListener('input', function () { settings.volume = Number($('setVol').value) || 0; $('setVolOut').textContent = Math.round(settings.volume) + '%'; });
+    $('setVol').addEventListener('change', function () { saveSettings(); initAudio(); sfx('buy'); });
+    $('setTest').addEventListener('click', function () { initAudio(); sfx('catch'); });
+    document.querySelectorAll('.seg-btn').forEach(function (b) {
+      b.addEventListener('click', function () { settings.notation = b.dataset.n; saveSettings(); applySettings(); update(); });
+    });
+    applySettings();
+  }
+  var G = 1.16;                       // cost growth per level
+  var MS = [10, 25, 50, 100, 150, 200, 300]; // levels where an upgrade doubles
+  var ERA_COST = [0, 2e4, 2e6, 1e8, 5e9, 2e11, 8e12, 3e14, 1e16]; // currency needed to enter each age (resets your run)
+  var ERA_STEP = 0.5;                         // each age adds this much to all production
+  var BOOST_BASE_CAP = 30, BOOST_CAP_STEP = 3;
+  var NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX'];
+
+  var ERA = [
+    { name: 'Stone Age',       cur: 'Bronze Standard', bg: '#16120d', panel: '#201a12', line: '#3b3122', accent: '#e0a458', a: '#c9843a', b: '#6e3f17', rim: '#f0c987' },
+    { name: 'Iron Age',        cur: 'Smelted Ingot',   bg: '#0f1318', panel: '#171d24', line: '#2c3743', accent: '#9db4cc', a: '#8497ad', b: '#3a4655', rim: '#cfdbe8' },
+    { name: 'Industrial Age',  cur: 'Steam Script',    bg: '#170e09', panel: '#221510', line: '#43281b', accent: '#e07b39', a: '#c8692c', b: '#5a2610', rim: '#f2b27f' },
+    { name: 'Information Age', cur: 'Cyber Credit',    bg: '#081418', panel: '#0f1f25', line: '#1d3a44', accent: '#3fd0e6', a: '#26b5cd', b: '#0b5666', rim: '#8fecfa' },
+    { name: 'Galactic Age',    cur: 'Cosmic Shard',    bg: '#130b1b', panel: '#1c1226', line: '#3a2650', accent: '#d878e0', a: '#e05fb0', b: '#4a3dbf', rim: '#f3a8ee' },
+    { name: 'Quantum Age',     cur: 'Quanta',          bg: '#0a1210', panel: '#121d1a', line: '#223c34', accent: '#5ef2c2' },
+    { name: 'Temporal Age',    cur: 'Chrono Dust',     bg: '#0e1020', panel: '#161a30', line: '#2b3260', accent: '#8a98ff' },
+    { name: 'Universal Age',   cur: 'Genesis Spark',   bg: '#1a0d0f', panel: '#251416', line: '#4d2429', accent: '#ff7080' },
+    { name: 'Eternal Age',     cur: 'Infinity Seed',   bg: '#0d0d0e', panel: '#181819', line: '#34343a', accent: '#f1ece2' }
+  ];
+
+  var COINS = [
+    { n: 'Bronze',      a: '#c9843a', b: '#6e3f17', rim: '#f0c987' },
+    { n: 'Silver',      a: '#cfd6df', b: '#6b7585', rim: '#f2f6fb' },
+    { n: 'Gold',        a: '#f2c744', b: '#9a6a0c', rim: '#ffe99a' },
+    { n: 'Emerald',     a: '#3fcf8e', b: '#0b5b3a', rim: '#a6f5cf' },
+    { n: 'Sapphire',    a: '#4f8cff', b: '#12338f', rim: '#b3ceff' },
+    { n: 'Ruby',        a: '#ef4f5f', b: '#7a0f1f', rim: '#ffb0b8' },
+    { n: 'Amethyst',    a: '#a66bff', b: '#3e1a8a', rim: '#dcc3ff' },
+    { n: 'Rose',        a: '#f0a08a', b: '#8a3f2f', rim: '#ffd9cc' },
+    { n: 'Obsidian',    a: '#4a4f63', b: '#12131c', rim: '#9aa0c0' },
+    { n: 'Prism',       a: '#ff7ac8', b: '#3b2dbf', rim: '#7ff0ff' },
+    { n: 'Topaz',       a: '#f5a623', b: '#8a4b00', rim: '#ffd98a' },
+    { n: 'Jade',        a: '#52c48a', b: '#145a3a', rim: '#b6f0cf' },
+    { n: 'Opal',        a: '#bfe6e8', b: '#6d8fb3', rim: '#f2fbff' },
+    { n: 'Copper',      a: '#d9774a', b: '#6a2c14', rim: '#f5b895' },
+    { n: 'Platinum',    a: '#dfe6ee', b: '#8a95a3', rim: '#ffffff' },
+    { n: 'Cobalt',      a: '#3a64d8', b: '#0f1f66', rim: '#9fb6ff' },
+    { n: 'Crimson',     a: '#d62f4b', b: '#5a0a1a', rim: '#ff9fb0' },
+    { n: 'Citrine',     a: '#ecd23a', b: '#7a6a08', rim: '#fff3a0' },
+    { n: 'Onyx',        a: '#2b2b33', b: '#050508', rim: '#7a7a8a' },
+    { n: 'Pearl',       a: '#f4ece4', b: '#b5a79a', rim: '#ffffff' },
+    { n: 'Aquamarine',  a: '#4fd9d1', b: '#0b5c66', rim: '#b4f5ef' },
+    { n: 'Moonstone',   a: '#c7c9f0', b: '#5a5f9e', rim: '#eef0ff' },
+    { n: 'Sunstone',    a: '#ff8a3d', b: '#8f2a00', rim: '#ffd0a6' },
+    { n: 'Nebula',      a: '#8a5cff', b: '#1f1450', rim: '#ff8ad8' },
+    { n: 'Aurora',      a: '#4dffb0', b: '#3a2db0', rim: '#c2fff0' },
+    { n: 'Starlight',   a: '#fff0a8', b: '#5a4a9e', rim: '#ffffff' },
+    { n: 'Eclipse',     a: '#222233', b: '#000000', rim: '#ffb347' },
+    { n: 'Supernova',   a: '#ffe14d', b: '#c2260a', rim: '#fff2b0' },
+    { n: 'Quasar',      a: '#5cf0ff', b: '#4a1aa8', rim: '#ffffff' },
+    { n: 'Chrono',      a: '#d6b45a', b: '#2b2a6e', rim: '#fff0c0' },
+    { n: 'Singularity', a: '#2a1a4a', b: '#000000', rim: '#e5d4ff' }
+  ];
+  function coinPalette(l) {
+    return COINS[Math.max(0, Math.min(l, COINS.length - 1))];
+  }
+
+  var UP = [
+    { n: 'Flint Cracker',     b: 15,     cps: 0.2,   clk: 0,      d: 'Sparks that gather resources on their own.' },
+    { n: 'Sharp Handaxe',     b: 100,    cps: 0,     clk: 1,      d: 'A better edge for every tap.' },
+    { n: 'Sling Hunter',      b: 450,    cps: 4,     clk: 0,      d: 'The tribe brings in a steady catch.' },
+    { n: 'Anvil Smelter',     b: 2500,   cps: 0,     clk: 12,     d: 'Hot metal, harder strikes.' },
+    { n: 'Steam Turbine',     b: 15000,  cps: 65,    clk: 0,      d: 'Boilers that never sleep.' },
+    { n: 'Silicon Microchip', b: 95000,  cps: 450,   clk: 150,    d: 'Dense logic automates the work.' },
+    { n: 'Antimatter Dynamo', b: 1.2e6,  cps: 8000,  clk: 2000,   d: 'Harnesses localized quantum collapses.' },
+    { n: 'Dyson Lattice',     b: 2.4e7,  cps: 1.6e5, clk: 0,      d: 'A star wrapped in collectors.' },
+    { n: 'Chrono Engine',     b: 5e8,    cps: 3.5e6, clk: 1e5,    d: 'Borrows income from tomorrow.' },
+    { n: 'Quantum Loom',      b: 1.2e10, cps: 8.4e7, clk: 2.4e6,  d: 'Weaves probability into profit.' },
+    { n: 'Temporal Forge',    b: 3e11,   cps: 0,     clk: 6e7,    d: 'Hammers single moments flat.' },
+    { n: 'Genesis Reactor',   b: 8e12,   cps: 5.2e10, clk: 1.6e9, d: 'Small universes, sold by the pound.' },
+    { n: 'Entropy Well',      b: 2e14,   cps: 1.3e12, clk: 0,     d: 'Feeds on the slow end of everything.' },
+    { n: 'Reality Compiler',  b: 6e15,   cps: 3.9e13, clk: 1.2e12, d: 'Builds physics to order.' },
+    { n: 'Infinity Engine',   b: 2e17,   cps: 1.3e15, clk: 4e13,  d: 'Never stops. Never needs to.' }
+  ];
+
+  var BOOST_STEP = 0.1;
+  var BOOST = [
+    { n: 'Overclock',     b: 3e3,   g: 1.5, d: 'currency per second' },
+    { n: 'Tap Training',  b: 3.6e4, g: 1.65,  d: 'currency per tap' },
+    { n: 'Token Siphon',  b: 1.5e6, g: 2.05,  d: 'tokens from rebirth' },
+    { n: 'Lucky Anomalies', b: 3.6e7, g: 2.15,  d: 'anomaly rewards' },
+    { n: 'Era Catalyst',  b: 1.2e9, g: 2.35,  d: 'age production bonus' },
+    { n: 'Trophy Polish', b: 3e10, g: 2.55,  d: 'trophy bonus' }
+  ];
+
+  var RB = [
+    { k: 'coin',  n: 'Coin Evolution Matrix', b: 10, m: 10, max: 30, d: function (l) { return 'Tap power ×' + fmt(Math.pow(2, l)) + ' → ×' + fmt(Math.pow(2, l + 1)); } },
+    { k: 'eff',   n: 'Temporal Catalyst',     b: 5,  m: 1.7, max: 30, d: function (l) { return 'All upgrade output +' + (l * 20) + '% → +' + ((l + 1) * 20) + '%'; } },
+    { k: 'fort',  n: 'Anomaly Capacitor',     b: 8,  m: 1.8, max: 30, d: function (l) { return 'Anomaly reward ×' + (1 + l * 1.5) + ' → ×' + (1 + (l + 1) * 1.5); } },
+    { k: 'start', n: 'Head Start',            b: 6,  m: 2.0, max: 20, d: function (l) { return 'Start with ' + fmt(headCash(l)) + ' → ' + fmt(headCash(l + 1)); } },
+    { k: 'limit', n: 'Boost Limit',          b: 10, m: 3,   max: 10, d: function (l) { return 'Boost level cap ' + (BOOST_BASE_CAP + l * BOOST_CAP_STEP) + ' → ' + (BOOST_BASE_CAP + (l + 1) * BOOST_CAP_STEP); } }
+  ];
+  var AUTO_COST = 100;
+  var PACE = 2;                               // overall game speed
+  var CHAL_STEP = 0.1;                        // +10% output per challenge trophy
+  var CH = [
+    { id: 'steam',  n: 'Steam Rush',        era: 2, p: 0.9,  t: 0 },
+    { id: 'fingers', n: 'Fingers of Stone', era: 2, p: 0.5,  t: 0.9 },
+    { id: 'cyber',  n: 'Cyber Sprint',      era: 3, p: 0.9,  t: 0 },
+    { id: 'galaxy', n: 'Galactic Gauntlet', era: 4, p: 0.95, t: 0 },
+    { id: 'quantum', n: 'Quantum Trial',    era: 5, p: 0.97, t: 0 }
+  ];
+  function chalDone() { return CH.filter(function (c) { return S.chal.done[c.id]; }).length; }
+  function chalActive() { return CH.filter(function (c) { return c.id === S.chal.active; })[0] || null; }
+  function chalProd() { var c = chalActive(); return c ? 1 - c.p : 1; }
+  function chalTap() { var c = chalActive(); return c ? 1 - c.t : 1; }
+  function chalMult() { return 1 + CHAL_STEP * chalDone(); }
+  function chalText(c) { return '\u2212' + Math.round(c.p * 100) + '% output' + (c.t ? ' and \u2212' + Math.round(c.t * 100) + '% tap power' : ''); }
+
+  // Head Start: each level begins a run with 0.2% of your best single run (never less than 250 x level squared).
+  function headCash(l) { return l <= 0 ? 0 : Math.max(250 * l * l, S.bestRun * 0.002 * l); }
+
+  function T(cat, id, name, desc, fn) { return [id, name, desc, fn, cat]; }
+  var AC = [
+    // Tapping
+    T('Tapping', 'spark',  'First Spark',       'Tap the coin once.',                    function () { return S.clicks >= 1; }),
+    T('Tapping', 't100',   'Hundred Taps',      'Tap 100 times.',                        function () { return S.clicks >= 100; }),
+    T('Tapping', 't1000',  'Calloused Thumb',   'Tap 1,000 times.',                      function () { return S.clicks >= 1000; }),
+    T('Tapping', 't10k',   'Tireless',          'Tap 10,000 times.',                     function () { return S.clicks >= 10000; }),
+    T('Tapping', 't50k',   'Iron Wrist',        'Tap 50,000 times.',                     function () { return S.clicks >= 50000; }),
+    T('Tapping', 't100k',  'Carpal Tunnel',     'Tap 100,000 times.',                    function () { return S.clicks >= 100000; }),
+    T('Tapping', 'clk1k',  'Heavy Hitter',      'Reach 1,000 per tap.',                  function () { return click() >= 1e3; }),
+    T('Tapping', 'clk1m',  'Meteor Strike',     'Reach 1 million per tap.',              function () { return click() >= 1e6; }),
+    T('Tapping', 'clk1b',  'Planet Cracker',    'Reach 1 billion per tap.',              function () { return click() >= 1e9; }),
+    // Upgrades
+    T('Upgrades', 'own5',    'Automated Routine',  'Own 5 upgrades in total.',            function () { return owned() >= 5; }),
+    T('Upgrades', 'own50',   'Workshop',           'Own 50 upgrades in total.',           function () { return owned() >= 50; }),
+    T('Upgrades', 'own100',  'Small Factory',      'Own 100 upgrades in total.',          function () { return owned() >= 100; }),
+    T('Upgrades', 'own250',  'Industrial Complex', 'Own 250 upgrades in total.',          function () { return owned() >= 250; }),
+    T('Upgrades', 'own500',  'Megacorp',           'Own 500 upgrades in total.',          function () { return owned() >= 500; }),
+    T('Upgrades', 'own1000', 'Civilization',       'Own 1,000 upgrades in total.',        function () { return owned() >= 1000; }),
+    T('Upgrades', 'stock',   'Fully Stocked',      'Own at least one of every upgrade.',  function () { return S.levels.every(function (l) { return l > 0; }); }),
+    T('Upgrades', 'ms10',    'Milestone Reached',  'Take any upgrade to level 10.',       function () { return S.levels.some(function (l) { return l >= 10; }); }),
+    T('Upgrades', 'ms50',    'Deep Specialist',    'Take any upgrade to level 50.',       function () { return S.levels.some(function (l) { return l >= 50; }); }),
+    T('Upgrades', 'ms100',   'Centurion',          'Take any upgrade to level 100.',      function () { return S.levels.some(function (l) { return l >= 100; }); }),
+    T('Upgrades', 'ms200',   'Beyond Mastery',     'Take any upgrade to level 200.',      function () { return S.levels.some(function (l) { return l >= 200; }); }),
+    T('Upgrades', 'well',    'Well Rounded',       'Take every upgrade to level 10.',     function () { return S.levels.every(function (l) { return l >= 10; }); }),
+    // Wealth
+    T('Wealth', 'm1',     'Millionaire',         'Earn 1 million in a single run.',       function () { return S.run >= 1e6; }),
+    T('Wealth', 'm100',   'Hundred Millionaire', 'Earn 100 million in a single run.',     function () { return S.run >= 1e8; }),
+    T('Wealth', 'm1b',    'Nine Zeroes',         'Earn 1 billion in a single run.',       function () { return S.run >= 1e9; }),
+    T('Wealth', 'b1',     'Billionaire',         'Earn 1 billion across all time.',       function () { return S.life >= 1e9; }),
+    T('Wealth', 't1',     'Trillionaire',        'Earn 1 trillion across all time.',      function () { return S.life >= 1e12; }),
+    T('Wealth', 'q1',     'Quadrillion Club',    'Earn 1 quadrillion across all time.',   function () { return S.life >= 1e15; }),
+    T('Wealth', 'qq1',    'Quintillionaire',     'Earn 1 quintillion across all time.',   function () { return S.life >= 1e18; }),
+    T('Wealth', 'cps1k',  'Thousand a Second',   'Reach 1,000 per second.',               function () { return cps() >= 1e3; }),
+    T('Wealth', 'cps1m',  'Engine of Industry',  'Reach 1 million per second.',           function () { return cps() >= 1e6; }),
+    T('Wealth', 'cps1b',  'Runaway Economy',     'Reach 1 billion per second.',           function () { return cps() >= 1e9; }),
+    T('Wealth', 'cps1t',  'Economy of Scale',    'Reach 1 trillion per second.',          function () { return cps() >= 1e12; }),
+    // Ages
+    T('Ages', 'era1',  'Into the Iron',      'Reach the Iron Age.',                       function () { return eraIdx() >= 1; }),
+    T('Ages', 'era2',  'Steam and Smoke',    'Reach the Industrial Age.',                 function () { return eraIdx() >= 2; }),
+    T('Ages', 'era3',  'Online',             'Reach the Information Age.',                function () { return eraIdx() >= 3; }),
+    T('Ages', 'era4',  'Galactic Overlord',  'Reach the Galactic Age.',                   function () { return eraIdx() >= 4; }),
+    T('Ages', 'era5',  'Quantum Leap',       'Reach the Quantum Age.',                    function () { return eraIdx() >= 5; }),
+    T('Ages', 'era6',  'Time Keeper',        'Reach the Temporal Age.',                   function () { return eraIdx() >= 6; }),
+    T('Ages', 'era7',  'Universal Mind',     'Reach the Universal Age.',                  function () { return eraIdx() >= 7; }),
+    T('Ages', 'era8',  'Beyond Eternity',    'Reach the Eternal Age.',                    function () { return eraIdx() >= 8; }),
+    // Coins
+    T('Coins', 'coin1',  'Silver Lining',        'Evolve your coin once.',                function () { return S.r.coin >= 1; }),
+    T('Coins', 'coin3',  'Gem Cutter',           'Evolve your coin 3 times.',             function () { return S.r.coin >= 3; }),
+    T('Coins', 'coin5',  'Mint Condition',       'Evolve your coin 5 times.',             function () { return S.r.coin >= 5; }),
+    T('Coins', 'coin9',  'Prismatic',            'Evolve your coin 9 times.',             function () { return S.r.coin >= 9; }),
+    T('Coins', 'coin15', 'Beyond the Palette',   'Evolve your coin 15 times.',            function () { return S.r.coin >= 15; }),
+    // Rebirth
+    T('Rebirth', 'rb1',    'Dimensional Wanderer', 'Rebirth once.',                       function () { return S.rebirths >= 1; }),
+    T('Rebirth', 'rb5',    'Seasoned Traveler',    'Rebirth 5 times.',                    function () { return S.rebirths >= 5; }),
+    T('Rebirth', 'rb10',   'Cycle Breaker',        'Rebirth 10 times.',                   function () { return S.rebirths >= 10; }),
+    T('Rebirth', 'rb25',   'Eternal Return',       'Rebirth 25 times.',                   function () { return S.rebirths >= 25; }),
+    T('Rebirth', 'rb50',   'Infinite Loop',        'Rebirth 50 times.',                   function () { return S.rebirths >= 50; }),
+    T('Rebirth', 'mx1',    'First Investment',     'Buy a Dimensional Matrix upgrade.',   function () { return S.r.coin + S.r.eff + S.r.fort + S.r.start + S.r.limit > 0; }),
+    T('Rebirth', 'mx10',   'Matrix Mastery',       'Take any Matrix upgrade to level 10.', function () { return Object.keys(S.r).some(function (k) { return S.r[k] >= 10; }); }),
+    T('Rebirth', 'tok100', 'Token Hoarder',        'Hold 100 tokens at once.',            function () { return S.tokens >= 100; }),
+    T('Rebirth', 'tok1k',  'Token Baron',          'Hold 1,000 tokens at once.',          function () { return S.tokens >= 1000; }),
+    T('Rebirth', 'lim1',   'Raise the Ceiling',    'Buy a Boost Limit upgrade.',          function () { return S.r.limit >= 1; }),
+    T('Rebirth', 'lim10',  'Glass Ceiling Broken', 'Max out Boost Limit.',                function () { return S.r.limit >= 10; }),
+    T('Rebirth', 'hs1',    'Running Start',        'Buy a Head Start upgrade.',           function () { return S.r.start >= 1; }),
+    T('Rebirth', 'auto',   'Hands Free',           'Unlock the Chrono Auto-Buyer.',       function () { return S.autoOwned; }),
+    // Anomalies
+    T('Anomalies', 'dm1',   'Anomaly Intercepted', 'Catch a Dark Matter anomaly.',        function () { return S.dmCaught >= 1; }),
+    T('Anomalies', 'dm10',  'Anomaly Hunter',      'Catch 10 anomalies.',                 function () { return S.dmCaught >= 10; }),
+    T('Anomalies', 'dm25',  'Void Collector',      'Catch 25 anomalies.',                 function () { return S.dmCaught >= 25; }),
+    T('Anomalies', 'dm50',  'Event Horizon',       'Catch 50 anomalies.',                 function () { return S.dmCaught >= 50; }),
+    T('Anomalies', 'dm100', 'Singularity',         'Catch 100 anomalies.',                function () { return S.dmCaught >= 100; }),
+    // Boosts
+    T('Boosts', 'bst1',   'Overclocked',     'Buy a boost level.',                        function () { return S.boost.some(function (l) { return l > 0; }); }),
+    T('Boosts', 'bst5',   'Token Siphoner',  'Take Token Siphon to level 5.',             function () { return S.boost[2] >= 5; }),
+    T('Boosts', 'bstset', 'Complete Set',    'Own at least one level of every boost.',    function () { return S.boost.every(function (l) { return l > 0; }); }),
+    T('Boosts', 'bst10',  'Fully Boosted',   'Take every boost to level 10.',             function () { return S.boost.every(function (l) { return l >= 10; }); }),
+    T('Boosts', 'bst30',  'Maxed Out',       'Take any boost to level 30.',               function () { return S.boost.some(function (l) { return l >= 30; }); }),
+    // Misc
+    T('Misc', 'away',    'Patient Ruler',    'Come back after being away for an hour.',   function () { return S.awayMax >= 3600; }),
+    T('Misc', 'night',   'Night Owl',        'Play between midnight and 5 AM.',           function () { return new Date().getHours() < 5; }),
+    T('Misc', 'early',   'Early Bird',       'Play between 5 and 8 AM.',                  function () { var h = new Date().getHours(); return h >= 5 && h < 8; }),
+    T('Misc', 'weekend', 'Weekend Warrior',  'Play on a Saturday or Sunday.',             function () { var d = new Date().getDay(); return d === 0 || d === 6; }),
+    T('Misc', 'col10',   'Collector',        'Earn 10 trophies.',                         function () { return trophyCount() >= 10; }),
+    T('Misc', 'col25',   'Curator',          'Earn 25 trophies.',                         function () { return trophyCount() >= 25; }),
+    T('Misc', 'col50',   'Archivist',        'Earn 50 trophies.',                         function () { return trophyCount() >= 50; }),
+    T('Misc', 'all',     'Completionist',    'Earn every other trophy.',                  function () { return trophyCount() >= AC.length - 1; })
+  ];
+
+  /* ---------- State ---------- */
+  function fresh() {
+    return {
+      bal: 0, run: 0, life: 0, clicks: 0, rebirths: 0, tokens: 0,
+      levels: UP.map(function () { return 0; }),
+      r: { coin: 0, eff: 0, fort: 0, start: 0, limit: 0 },
+      era: 0,
+      auto: false, autoOwned: false, mode: 1,
+      ach: {}, dmCaught: 0, awayMax: 0, boost: BOOST.map(function () { return 0; }), head: 0, bestRun: 0, spent: 0, played: 0, tokensEarned: 0, cheated: false, chal: { done: {}, active: null, snap: null }, t: Date.now()
+    };
+  }
+  var S = fresh();
+  var filtering = true;
+  var speed = 1;
+  var TAP_CAP = 15;
+  var clickTimes = [];
+  var shownEra = -1;
+  var shownCoin = -1;
+  var armedUntil = 0;
+  var eraArmedUntil = 0;
+  var wipeArmedUntil = 0;
+  var dmTimer = null, dmLife = null;
+
+  function $(id) { return document.getElementById(id); }
+
+  /* ---------- Formatting ---------- */
+  // Short scale: k m b t qd qn sx sp oc no, then De, UDe, DDe ... NoDe, Vg and on up to 10^303.
+  var BASE = ['', 'k', 'm', 'b', 't', 'qd', 'qn', 'sx', 'sp', 'oc', 'no'];
+  var UNITS = ['', 'U', 'D', 'T', 'Qd', 'Qn', 'Sx', 'Sp', 'Oc', 'No'];
+  var TENS = ['', 'De', 'Vg', 'Tg', 'Qg', 'Qq', 'Sg', 'St', 'Og', 'Ng'];
+  function tierName(t) {
+    if (t < BASE.length) return BASE[t];
+    var i = t - 1, a = Math.floor(i / 10), b = i % 10;
+    if (a >= TENS.length) return '';
+    return UNITS[b] + TENS[a];
+  }
+  function tierFromSuffix(sf) {
+    for (var t = 1; t <= 100; t++) if (tierName(t).toLowerCase() === sf) return t;
+    return -1;
+  }
+  function sci(n, eng) {
+    var e = Math.floor(Math.log10(n));
+    var m = n / Math.pow(10, e);
+    if (m.toFixed(2) === '10.00') { m = 1; e++; }
+    if (eng) { var r = ((e % 3) + 3) % 3; e -= r; m *= Math.pow(10, r); }
+    return m.toFixed(2) + 'e' + e;
+  }
+  function fmt(n) {
+    if (!isFinite(n)) return '∞';
+    if (n < 0) return '-' + fmt(-n);
+    if (n < 1000) return n % 1 === 0 ? n.toFixed(0) : n.toFixed(n < 10 ? 2 : 1);
+    var mode = settings.notation;
+    if (mode !== 'letters') {
+      if (n < 1e6) return Math.floor(n).toLocaleString('en-US');
+      return sci(n, mode === 'engineering');
+    }
+    var t = Math.floor(Math.log10(n) / 3);
+    var v = n / Math.pow(1000, t);
+    if (v.toFixed(2) === '1000.00') { t++; v = n / Math.pow(1000, t); }
+    var nm = t <= 100 ? tierName(t) : '';
+    if (!nm) return sci(n, false);
+    return v.toFixed(2) + nm;
+  }
+  function fmtTime(s) {
+    s = Math.floor(s);
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    if (h > 0) return h + 'h ' + m + 'm';
+    if (m > 0) return m + 'm';
+    return s + 's';
+  }
+
+  /* ---------- Maths ---------- */
+  function owned() { return S.levels.reduce(function (a, b) { return a + b; }, 0); }
+  function trophyCount() { return Object.keys(S.ach).length; }
+  function trophyMult() { return 1 + 0.01 * trophyCount() * (1 + BOOST_STEP * S.boost[5]); }
+  function msMult(i) {
+    var L = S.levels[i], c = 0;
+    for (var k = 0; k < MS.length; k++) if (L >= MS[k]) c++;
+    return Math.pow(2, c);
+  }
+  function globalMult() { return (1 + 0.2 * S.r.eff) * (1 + BOOST_STEP * S.boost[0]) * eraMult() * trophyMult() * chalMult() * chalProd() * PACE; }
+  function cps() {
+    var t = 0;
+    for (var i = 0; i < UP.length; i++) t += UP[i].cps * S.levels[i] * msMult(i);
+    return t * globalMult();
+  }
+  function clickBase() {
+    var t = 1;
+    for (var i = 0; i < UP.length; i++) t += UP[i].clk * S.levels[i] * msMult(i);
+    return t;
+  }
+  function clickMult() { return Math.pow(2, S.r.coin) * (1 + BOOST_STEP * S.boost[1]) * eraMult() * trophyMult() * chalMult() * chalProd() * chalTap() * PACE; }
+  function click() { return clickBase() * clickMult() + cps() * 0.01; }
+  function eraIdx() { return Math.min(S.era || 0, ERA.length - 1); }
+  function eraMult() { return 1 + ERA_STEP * eraIdx() * (1 + BOOST_STEP * S.boost[4]); }
+  function boostLimit() { return BOOST_BASE_CAP + BOOST_CAP_STEP * S.r.limit; }
+  function rebirthThreshold() { return 500 * Math.pow(1.05, S.rebirths); }
+  function tokensNow() {
+    if (S.run < rebirthThreshold()) return 0;
+    return Math.floor(Math.pow(S.run / 500, 0.4) * (1 + BOOST_STEP * S.boost[2]));
+  }
+
+  function geoCost(b, g, L, n) { return Math.ceil(b * Math.pow(g, L) * (Math.pow(g, n) - 1) / (g - 1)); }
+  function geoMax(b, g, L, bal) {
+    var c = b * Math.pow(g, L);
+    var x = bal * (g - 1) / c + 1;
+    if (x < g) return 0;
+    var n = Math.floor(Math.log(x) / Math.log(g));
+    while (n > 0 && geoCost(b, g, L, n) > bal) n--;
+    return n;
+  }
+  function bulkCost(i, n) { return geoCost(UP[i].b, G, S.levels[i], n); }
+  function maxAff(i) { return geoMax(UP[i].b, G, S.levels[i], S.bal); }
+  function visible(i) { return i === 0 || S.levels[i - 1] > 0 || S.levels[i] > 0; }
+  function planFor(i) {
+    var n = S.mode === 0 ? maxAff(i) : S.mode;
+    var shown = Math.max(1, n);
+    return { n: shown, cost: bulkCost(i, shown) };
+  }
+
+  /* ---------- Actions ---------- */
+  function spend(c) { S.bal -= c; S.spent += c; }
+  function buy(i) {
+    if (!visible(i)) return;
+    var p = planFor(i);
+    if (S.bal < p.cost) return;
+    spend(p.cost);
+    S.levels[i] += p.n;
+    sfx('buy');
+    update();
+  }
+  function buyOne(i) {
+    var c = bulkCost(i, 1);
+    if (!visible(i) || S.bal < c) return false;
+    spend(c); S.levels[i]++;
+    return true;
+  }
+  function buyBest() {
+    sfx('buy');
+    var guard = 0, any = true;
+    while (any && guard++ < 2000) {
+      any = false;
+      for (var i = UP.length - 1; i >= 0; i--) {
+        if (buyOne(i)) { any = true; break; }
+      }
+    }
+    update();
+  }
+  function boostCost(j, n) { return geoCost(BOOST[j].b, BOOST[j].g, S.boost[j], n); }
+  function boostPlan(j) {
+    var B = BOOST[j];
+    var rem = boostLimit() - S.boost[j];
+    if (rem <= 0) return { n: 0, cost: 0 };
+    var want = S.mode === 0 ? Math.max(1, geoMax(B.b, B.g, S.boost[j], S.bal)) : S.mode;
+    var shown = Math.min(want, rem);
+    return { n: shown, cost: geoCost(B.b, B.g, S.boost[j], shown) };
+  }
+  function buyBoost(j) {
+    var p = boostPlan(j);
+    if (p.n < 1 || S.bal < p.cost) return;
+    spend(p.cost); S.boost[j] += p.n;
+    sfx('buy');
+    update();
+  }
+
+  // Smart auto-buyer: always picks the affordable purchase with the best return per currency spent
+  // (upgrades, Overclock, Tap Training), and buys in batches so it keeps up at high levels.
+  function autoBuy() {
+    var guard = 0;
+    while (guard++ < 40) {
+      var gm = globalMult(), cm = clickMult();
+      var best = null, bestScore = 0, i, j;
+      for (i = 0; i < UP.length; i++) {
+        if (!visible(i)) continue;
+        var c1 = bulkCost(i, 1);
+        if (S.bal < c1) continue;
+        var gain = (UP[i].cps * gm + UP[i].clk * cm * 2) * msMult(i);
+        var score = gain / c1;
+        if (score > bestScore) { bestScore = score; best = { u: true, i: i }; }
+      }
+      for (j = 0; j < 2; j++) {
+        if (S.boost[j] >= boostLimit()) continue;
+        var cb = boostCost(j, 1);
+        if (S.bal < cb) continue;
+        var base = j === 0
+          ? cps() / (1 + BOOST_STEP * S.boost[0])
+          : clickBase() * Math.pow(2, S.r.coin) * eraMult() * trophyMult() * 2;
+        var sb = base * BOOST_STEP / cb;
+        if (sb > bestScore) { bestScore = sb; best = { u: false, i: j }; }
+      }
+      if (!best) break;
+      if (best.u) {
+        var n = Math.min(10, Math.max(1, maxAff(best.i)));
+        spend(bulkCost(best.i, n)); S.levels[best.i] += n;
+      } else {
+        var B = BOOST[best.i];
+        var nb = Math.min(10, boostLimit() - S.boost[best.i], Math.max(1, geoMax(B.b, B.g, S.boost[best.i], S.bal)));
+        spend(boostCost(best.i, nb)); S.boost[best.i] += nb;
+      }
+    }
+  }
+
+  function doClick(ev) {
+    var now = Date.now();
+    if (filtering) {
+      clickTimes = clickTimes.filter(function (t) { return now - t < 1000; });
+      if (clickTimes.length >= TAP_CAP) {
+        $('capAlert').hidden = false;
+        clearTimeout(doClick.hide);
+        doClick.hide = setTimeout(function () { $('capAlert').hidden = true; }, 1000);
+        return;
+      }
+      clickTimes.push(now);
+    }
+    var v = click();
+    S.bal += v; S.run += v; S.life += v; S.clicks++;
+    sfx('tap');
+    floatText('+' + fmt(v), ev);
+    update();
+  }
+  function floatText(txt, ev) {
+    if (!settings.vfx) return;
+    var pad = $('pad'), r = pad.getBoundingClientRect();
+    var x = r.width / 2, y = r.height / 2 - 70;
+    if (ev && ev.detail > 0 && ev.clientX) {
+      x = ev.clientX - r.left; y = ev.clientY - r.top;
+    }
+    x += (Math.random() - 0.5) * 24;
+    var el = document.createElement('div');
+    el.className = 'float';
+    el.textContent = txt;
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    pad.appendChild(el);
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 950);
+  }
+
+  function rebirth() {
+    var n = tokensNow();
+    if (n < 1 || S.chal.active) return;
+    var now = Date.now();
+    if (now > armedUntil) {
+      armedUntil = now + 3500;
+      update();
+      return;
+    }
+    armedUntil = 0;
+    S.bestRun = Math.max(S.bestRun || 0, S.run);
+    sfx('rebirth');
+    S.tokens += n;
+    S.tokensEarned += n;
+    S.rebirths++;
+    S.run = 0;
+    S.head = headCash(S.r.start);
+    S.bal = S.head;
+    S.levels = UP.map(function () { return 0; });
+    S.boost = BOOST.map(function () { return 0; });
+    S.era = 0;
+    toast('<b>Rebirth.</b> +' + fmt(n) + ' token' + (n === 1 ? '' : 's') + '. The timeline starts over.');
+    save();
+    submitScore();
+    update();
+  }
+  function rbCost(def) { return Math.round(def.b * Math.pow(def.m, S.r[def.k])); }
+  function buyRb(k) {
+    var def = RB.filter(function (r) { return r.k === k; })[0];
+    var c = rbCost(def);
+    if (S.r[k] >= def.max || S.tokens < c) return;
+    S.tokens -= c; S.r[k]++;
+    sfx('buy');
+    if (k === 'coin') toast('<b>Coin evolved.</b> It is now ' + coinPalette(S.r.coin).n + '.');
+    update();
+  }
+  function buyEra() {
+    var next = eraIdx() + 1;
+    if (next >= ERA.length) return;
+    if (S.bal < ERA_COST[next]) return;
+    var now = Date.now();
+    if (now > eraArmedUntil) { eraArmedUntil = now + 3500; update(); return; }
+    eraArmedUntil = 0;
+    S.spent += ERA_COST[next];
+    S.era = next;
+    sfx('era');
+    setTimeout(submitScore, 0);
+    S.levels = S.levels.map(function (l) { return Math.round(l * 0.5); });
+    S.head = headCash(S.r.start);
+    S.bal = S.head;
+    var ch = chalActive();
+    if (ch && S.era >= ch.era) completeChal(ch);
+    update();
+  }
+  function buyAuto() {
+    if (S.autoOwned || S.tokens < AUTO_COST) return;
+    S.tokens -= AUTO_COST; S.autoOwned = true; S.auto = true;
+    sfx('buy');
+    update();
+  }
+
+  /* ---------- Challenges ---------- */
+  var chalArmed = '', chalArmedUntil = 0;
+  function startChal(id) {
+    if (S.chal.active) return;
+    var now = Date.now();
+    if (chalArmed !== id || now > chalArmedUntil) { chalArmed = id; chalArmedUntil = now + 4000; update(); return; }
+    chalArmed = '';
+    S.chal.active = id;
+    S.chal.snap = { levels: S.levels.slice(), boost: S.boost.slice(), bal: S.bal, run: S.run, era: S.era };
+    S.levels = UP.map(function () { return 0; });
+    S.boost = BOOST.map(function () { return 0; });
+    S.bal = 0; S.run = 0; S.era = 0;
+    sfx('rebirth');
+    toast('<b>Challenge started.</b> Reach the goal to earn a trophy.');
+    update();
+  }
+  function exitChal() {
+    var sn = S.chal.snap;
+    if (sn) { S.levels = sn.levels; S.boost = sn.boost; S.bal = sn.bal; S.run = sn.run; S.era = sn.era; }
+    S.chal.active = null; S.chal.snap = null;
+    shownEra = -1;
+  }
+  function completeChal(c) {
+    S.chal.done[c.id] = 1;
+    exitChal();
+    sfx('trophy');
+    toast('<b>Challenge complete:</b> ' + c.n + '. +' + Math.round(CHAL_STEP * 100) + '% to all output.');
+    save();
+  }
+  function abandonChal() {
+    var now = Date.now();
+    if (chalArmed !== '!' || now > chalArmedUntil) { chalArmed = '!'; chalArmedUntil = now + 4000; update(); return; }
+    chalArmed = '';
+    exitChal();
+    toast('Challenge abandoned. Your run is restored.');
+    update();
+  }
+
+  /* ---------- Dark Matter ---------- */
+  function scheduleAnomaly(extra) {
+    clearTimeout(dmTimer);
+    dmTimer = setTimeout(spawnAnomaly, 20000 + Math.random() * 20000 + (extra || 0));
+  }
+  function spawnAnomaly() {
+    var el = $('anomaly');
+    if (!el.hidden) return;
+    var ang = Math.random() * Math.PI * 2, rad = 128 + Math.random() * 28;
+    var pad = $('pad'), w = pad.clientWidth || 340;
+    var cx = w / 2, cy = w / 2;
+    el.style.left = (cx + Math.cos(ang) * rad * (w / 340) - 25) + 'px';
+    el.style.top = (cy + Math.sin(ang) * rad * (w / 340) - 25) + 'px';
+    el.hidden = false;
+    sfx('spawn');
+    toast('<b>Anomaly spotted.</b> Catch it within 10 seconds.');
+    clearTimeout(dmLife);
+    dmLife = setTimeout(function () {
+      el.hidden = true;
+      toast('The anomaly faded. The next one will take 15 seconds longer.');
+      scheduleAnomaly(15000);
+    }, 10000);
+  }
+  function catchAnomaly() {
+    var el = $('anomaly');
+    if (el.hidden) return;
+    clearTimeout(dmLife);
+    el.hidden = true;
+    var reward = Math.max(cps() * 45, click() * 100) * (1 + S.r.fort * 1.5) * (1 + BOOST_STEP * S.boost[3]);
+    S.bal += reward; S.run += reward; S.life += reward; S.dmCaught++;
+    sfx('catch');
+    toast('<b>Anomaly caught.</b> +' + fmt(reward));
+    scheduleAnomaly();
+    update();
+  }
+
+  /* ---------- Trophies ---------- */
+  function checkAch() {
+    for (var i = 0; i < AC.length; i++) {
+      var a = AC[i];
+      if (!S.ach[a[0]] && a[3]()) {
+        S.ach[a[0]] = 1;
+        sfx('trophy');
+        toast('<b>Trophy:</b> ' + a[1]);
+        renderTrophies();
+      }
+    }
+  }
+  var openCats = {};
+  function renderTrophies() {
+    var box = $('trophyList');
+    box.querySelectorAll('details').forEach(function (d) { openCats[d.dataset.cat] = d.open; });
+    box.innerHTML = '';
+    var cats = [];
+    AC.forEach(function (a) { if (cats.indexOf(a[4]) < 0) cats.push(a[4]); });
+    cats.forEach(function (c) {
+      var items = AC.filter(function (a) { return a[4] === c; });
+      var got = items.filter(function (a) { return S.ach[a[0]]; }).length;
+      var det = document.createElement('details');
+      det.className = 'tcat'; det.dataset.cat = c; det.open = openCats[c] === true;
+      var sum = document.createElement('summary');
+      var nm = document.createElement('span'); nm.textContent = c;
+      var ct = document.createElement('span'); ct.className = 'tcount'; ct.textContent = got + '/' + items.length;
+      sum.appendChild(nm); sum.appendChild(ct); det.appendChild(sum);
+      items.forEach(function (a) {
+        var d = document.createElement('div');
+        d.className = 'trophy' + (S.ach[a[0]] ? ' on' : '');
+        var b = document.createElement('b'); b.textContent = a[1];
+        var sp = document.createElement('span'); sp.textContent = a[2];
+        d.appendChild(b); d.appendChild(sp);
+        det.appendChild(d);
+      });
+      box.appendChild(det);
+    });
+    $('trophyCount').textContent = trophyCount() + '/' + AC.length;
+  }
+
+  /* ---------- Toasts ---------- */
+  function toast(html) {
+    var box = $('toasts');
+    var t = document.createElement('div');
+    t.className = 'toast';
+    t.innerHTML = html;
+    box.appendChild(t);
+    while (box.children.length > 3) box.removeChild(box.firstChild);
+    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 4200);
+  }
+
+  /* ---------- Rendering ---------- */
+  var rowRefs = [], shopRefs = {}, boostRefs = [];
+
+  function buildMarket() {
+    var box = $('marketRows');
+    box.innerHTML = '';
+    rowRefs = UP.map(function (u, i) {
+      var row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML =
+        '<div><div class="row-head"><span class="row-name"></span><span class="row-lvl"></span></div>' +
+        '<div class="row-eff"></div><div class="row-sub"></div></div>' +
+        '<button class="buy"><span class="bn"></span><small class="bc"></small></button>';
+      var ref = {
+        row: row,
+        name: row.querySelector('.row-name'), lvl: row.querySelector('.row-lvl'),
+        eff: row.querySelector('.row-eff'), sub: row.querySelector('.row-sub'),
+        btn: row.querySelector('.buy'), bn: row.querySelector('.bn'), bc: row.querySelector('.bc')
+      };
+      ref.btn.addEventListener('click', function () { buy(i); });
+      box.appendChild(row);
+      return ref;
+    });
+  }
+
+  function buildBoosts() {
+    var box = $('boostRows');
+    box.innerHTML = '';
+    boostRefs = BOOST.map(function (B, j) {
+      var row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML =
+        '<div><div class="row-head"><span class="row-name"></span><span class="row-lvl"></span></div>' +
+        '<div class="row-eff"></div><div class="row-sub"></div></div>' +
+        '<button class="buy"><span class="bn"></span><small class="bc"></small></button>';
+      var ref = {
+        row: row,
+        name: row.querySelector('.row-name'), lvl: row.querySelector('.row-lvl'),
+        eff: row.querySelector('.row-eff'), sub: row.querySelector('.row-sub'),
+        btn: row.querySelector('.buy'), bn: row.querySelector('.bn'), bc: row.querySelector('.bc')
+      };
+      ref.btn.addEventListener('click', function () { buyBoost(j); });
+      box.appendChild(row);
+      return ref;
+    });
+  }
+
+  var chalRefs = [];
+  function buildChal() {
+    var box = $('chalRows');
+    box.innerHTML = '';
+    chalRefs = CH.map(function (c) {
+      var row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML =
+        '<div><div class="row-head"><span class="row-name"></span><span class="row-lvl"></span></div>' +
+        '<div class="row-eff"></div><div class="row-sub"></div></div>' +
+        '<button class="buy"><span class="bn"></span></button>';
+      var ref = { name: row.querySelector('.row-name'), lvl: row.querySelector('.row-lvl'), eff: row.querySelector('.row-eff'), sub: row.querySelector('.row-sub'), btn: row.querySelector('.buy'), bn: row.querySelector('.bn') };
+      ref.btn.addEventListener('click', function () { if (S.chal.active === c.id) abandonChal(); else startChal(c.id); });
+      box.appendChild(row);
+      return ref;
+    });
+  }
+
+  function buildShop() {
+    var box = $('shopRows');
+    box.innerHTML = '';
+    shopRefs = {};
+    RB.forEach(function (def) {
+      var row = document.createElement('div');
+      row.className = 'row tok';
+      row.innerHTML =
+        '<div><div class="row-head"><span class="row-name"></span><span class="row-lvl"></span></div>' +
+        '<div class="row-eff"></div></div>' +
+        '<button class="buy tok"><span class="bn"></span></button>';
+      var ref = { name: row.querySelector('.row-name'), lvl: row.querySelector('.row-lvl'), eff: row.querySelector('.row-eff'), btn: row.querySelector('.buy'), bn: row.querySelector('.bn') };
+      ref.btn.addEventListener('click', function () { buyRb(def.k); });
+      shopRefs[def.k] = ref;
+      box.appendChild(row);
+    });
+    var arow = document.createElement('div');
+    arow.className = 'row tok';
+    arow.innerHTML =
+      '<div><div class="row-head"><span class="row-name">Chrono Auto-Buyer</span></div>' +
+      '<div class="row-eff">Buys the best-value upgrades and boosts for you.</div></div>' +
+      '<button class="buy tok"><span class="bn"></span></button>';
+    shopRefs.auto = { btn: arow.querySelector('.buy'), bn: arow.querySelector('.bn') };
+    shopRefs.auto.btn.addEventListener('click', function () {
+      if (S.autoOwned) { S.auto = !S.auto; update(); } else buyAuto();
+    });
+    box.appendChild(arow);
+  }
+
+  function applyEra(e) {
+    var E = ERA[e], st = document.documentElement.style;
+    st.setProperty('--bg', E.bg); st.setProperty('--panel', E.panel); st.setProperty('--line', E.line);
+    st.setProperty('--accent', E.accent);
+    var nl = NUMERALS[e].length;
+    $('coinNum').style.fontSize = nl > 3 ? '2.6rem' : nl > 2 ? '3.2rem' : '';
+    $('cur').textContent = E.cur;
+    $('coinNum').textContent = NUMERALS[e];
+    $('eraTag').textContent = E.name;
+    
+    if (shownEra >= 0 && e > shownEra) toast('<b>' + E.name + '.</b> Your currency is now the ' + E.cur + '.');
+    shownEra = e;
+  }
+
+  function applyCoin(l) {
+    var p = coinPalette(l), st = document.documentElement.style;
+    st.setProperty('--coin-a', p.a); st.setProperty('--coin-b', p.b); st.setProperty('--coin-rim', p.rim);
+    $('coinName').textContent = p.n + ' coin' + (l > 0 ? ' · evolution ' + l : '');
+    shownCoin = l;
+  }
+
+  function update() {
+    var e = eraIdx();
+    if (e !== shownEra) applyEra(e);
+    if (S.r.coin !== shownCoin) applyCoin(S.r.coin);
+
+    var c = cps(), k = click();
+    $('bal').textContent = fmt(Math.floor(S.bal));
+    $('cps').firstChild.nodeValue = fmt(c) + ' ';
+    $('clk').firstChild.nodeValue = '+' + fmt(k) + ' ';
+
+    $('stRun').textContent = fmt(Math.floor(S.run));
+    $('stLife').textContent = fmt(Math.floor(S.life));
+    $('stClicks').textContent = S.clicks.toLocaleString();
+    $('stRebirths').textContent = S.rebirths;
+    $('stDm').textContent = S.dmCaught;
+    $('stTrophy').textContent = '+' + Math.round((trophyMult() - 1) * 100) + '%';
+    $('stTok').textContent = fmt(S.tokens);
+    $('rbTok').textContent = fmt(S.tokens);
+    $('trophyCount').textContent = trophyCount() + '/' + AC.length;
+
+    var n = tokensNow(), thr = rebirthThreshold();
+    var rb = $('rebirthBtn'), armed = Date.now() < armedUntil;
+    rb.disabled = n < 1 || !!S.chal.active;
+    rb.classList.toggle('armed', armed && n >= 1);
+    var tokTxt = fmt(n) + (n === 1 ? ' token' : ' tokens');
+    rb.textContent = n < 1 ? 'Rebirth' : (armed ? 'Confirm rebirth for ' + tokTxt : 'Rebirth for ' + tokTxt);
+    $('rebirthInfo').textContent = S.chal.active ? 'Rebirth is locked during a challenge.' : n >= 1
+      ? 'Ready. Click twice to confirm.'
+      : 'Earn ' + fmt(thr) + ' in one run to rebirth (' + fmt(Math.floor(S.run)) + ' so far).';
+    $('rbBar').style.width = Math.min(100, S.run / thr * 100) + '%';
+
+    var gm = globalMult(), cm = clickMult();
+    for (var i = 0; i < UP.length; i++) {
+      var u = UP[i], r = rowRefs[i], vis = visible(i);
+      if (!vis) {
+        r.row.classList.add('locked');
+        r.name.textContent = '???'; r.lvl.textContent = '';
+        r.eff.textContent = '???';
+        r.sub.textContent = '???';
+        r.bn.textContent = 'Locked'; r.bc.textContent = '';
+        r.btn.disabled = true;
+        continue;
+      }
+      r.row.classList.remove('locked');
+      var L = S.levels[i], ms = msMult(i);
+      r.name.textContent = u.n;
+      r.lvl.textContent = 'Lv ' + L;
+      var parts = [];
+      if (u.cps > 0) parts.push('+' + fmt(u.cps * ms * gm) + '/s each');
+      if (u.clk > 0) parts.push('+' + fmt(u.clk * ms * cm) + ' per tap each');
+      r.eff.textContent = parts.join('  ·  ');
+      var next = null;
+      for (var m = 0; m < MS.length; m++) if (MS[m] > L) { next = MS[m]; break; }
+      r.sub.textContent = next ? 'Next ×2 at Lv ' + next : 'All milestones reached';
+      r.row.title = u.d;
+      var p = planFor(i);
+      r.bn.textContent = '×' + p.n;
+      r.bc.textContent = fmt(p.cost);
+      r.btn.disabled = S.bal < p.cost;
+    }
+
+    var lim = boostLimit();
+    $('boostNote').textContent = 'Max level ' + lim + '. Kept through ages, reset by rebirth.';
+    for (var j = 0; j < BOOST.length; j++) {
+      var B = BOOST[j], br = boostRefs[j], L2 = S.boost[j];
+      br.name.textContent = B.n;
+      br.lvl.textContent = 'Lv ' + L2 + '/' + lim;
+      br.eff.textContent = '+' + Math.round(L2 * BOOST_STEP * 100) + '% ' + B.d;
+      br.sub.textContent = '+' + Math.round(BOOST_STEP * 100) + '% per level';
+      if (L2 >= lim) {
+        br.bn.textContent = 'MAX'; br.bc.textContent = ''; br.btn.disabled = true;
+      } else {
+        var bp = boostPlan(j);
+        br.bn.textContent = '×' + bp.n;
+        br.bc.textContent = fmt(bp.cost);
+        br.btn.disabled = S.bal < bp.cost;
+      }
+    }
+
+    var act = chalActive(), cd = chalDone(), tNow = Date.now(), cb = Math.round(cd * CHAL_STEP * 100);
+    $('chalNote').textContent = cd + '/' + CH.length + ' complete, +' + cb + '% output. Starts a fresh run; your progress returns when you finish or abandon.';
+    $('stChal').textContent = '+' + cb + '%';
+    $('chalBanner').hidden = !act;
+    if (act) $('chalBanner').textContent = 'Challenge: ' + act.n + '. Reach the ' + ERA[act.era].name + '.';
+    CH.forEach(function (c, ci) {
+      var cr = chalRefs[ci], done = !!S.chal.done[c.id], on = !!act && act.id === c.id, live = chalArmedUntil > tNow;
+      cr.name.textContent = c.n;
+      cr.lvl.textContent = done ? 'Done' : on ? 'Active' : '';
+      cr.eff.textContent = 'Reach the ' + ERA[c.era].name + ' with ' + chalText(c);
+      cr.sub.textContent = 'Reward: +' + Math.round(CHAL_STEP * 100) + '% output';
+      cr.bn.textContent = on ? (live && chalArmed === '!' ? 'Confirm' : 'Abandon') : done ? 'Done' : (live && chalArmed === c.id ? 'Confirm' : 'Start');
+      cr.btn.disabled = on ? false : (done || !!act);
+    });
+
+    var nextE = e + 1, lastE = nextE >= ERA.length;
+    var eArmed = Date.now() < eraArmedUntil;
+    $('eraNext').textContent = lastE ? 'Final age reached' : ERA[nextE].name;
+    $('eraPerk').textContent = lastE
+      ? 'All production +' + Math.round((eraMult() - 1) * 100) + '% from ages.'
+      : '+' + Math.round(ERA_STEP * 100) + '% production. Halves upgrades and resets currency; boosts are kept.';
+    $('eraBtn').hidden = lastE;
+    if (!lastE) {
+      var canE = S.bal >= ERA_COST[nextE];
+      if (!canE) eraArmedUntil = 0;
+      $('eraCost').textContent = (eArmed && canE) ? 'Confirm' : fmt(ERA_COST[nextE]);
+      $('eraCur').textContent = (eArmed && canE) ? 'halves upgrades' : ERA[e].cur;
+      $('eraBtn').disabled = !canE;
+    }
+
+    {
+      RB.forEach(function (def) {
+        var ref = shopRefs[def.k], l = S.r[def.k], isMax = l >= def.max;
+        ref.name.textContent = def.n;
+        ref.lvl.textContent = l + '/' + def.max;
+        ref.eff.textContent = isMax ? 'Maxed out.' : def.d(l);
+        ref.bn.textContent = isMax ? 'MAX' : fmt(rbCost(def)) + ' tokens';
+        ref.btn.disabled = isMax || S.tokens < rbCost(def);
+      });
+      var a = shopRefs.auto;
+      if (S.autoOwned) { a.bn.textContent = 'Owned'; a.btn.disabled = true; }
+      else { a.bn.textContent = fmt(AUTO_COST) + ' tokens'; a.btn.disabled = S.tokens < AUTO_COST; }
+    }
+    var at = $('autoToggle');
+    at.hidden = !S.autoOwned;
+    at.textContent = 'Auto Buy: ' + (S.auto ? 'ON' : 'OFF');
+    at.setAttribute('aria-pressed', String(S.auto));
+    at.classList.toggle('on', S.auto);
+
+    document.querySelectorAll('.mode').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(Number(b.dataset.m) === S.mode));
+    });
+
+    if ($('dev').open) $('dRead').textContent = devReadout();
+  }
+
+  /* ---------- Save / load ---------- */
+  function save() {
+    S.t = Date.now();
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(S));
+      $('saveState').textContent = 'Saved ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (err) {
+      $('saveState').textContent = 'Saving unavailable here';
+    }
+  }
+  function normalize(d) {
+    var f = fresh();
+    Object.keys(f).forEach(function (k) { if (d[k] !== undefined) f[k] = d[k]; });
+    f.levels = UP.map(function (_, i) { return Number(d.levels && d.levels[i]) || 0; });
+    f.r = Object.assign({ coin: 0, eff: 0, fort: 0, start: 0, limit: 0 }, d.r || {});
+    if (d.era === undefined) {
+      f.era = 0;
+      for (var q = 1; q < 5; q++) if ((Number(d.run) || 0) + (Number(d.head) || 0) >= ERA_COST[q]) f.era = q;
+    }
+    f.era = Math.max(0, Math.min(Math.floor(Number(f.era)) || 0, ERA.length - 1));
+    ['bal', 'run', 'life', 'tokens', 'awayMax', 'head', 'bestRun'].forEach(function (k) { if (!isFinite(f[k])) f[k] = 0; });
+    f.boost = BOOST.map(function (_, i) { return Number(d.boost && d.boost[i]) || 0; });
+    ['spent', 'played', 'tokensEarned'].forEach(function (k) { f[k] = isFinite(Number(f[k])) ? Number(f[k]) : 0; });
+    if (d.tokensEarned === undefined) f.tokensEarned = Math.max(f.tokens, 0);
+    f.cheated = !!f.cheated;
+    var dc = d.chal || {};
+    f.chal = { done: dc.done && typeof dc.done === 'object' ? dc.done : {}, active: dc.snap && CH.some(function (c) { return c.id === dc.active; }) ? dc.active : null, snap: dc.snap || null };
+    if (!f.chal.active) f.chal.snap = null;
+    if ([0, 1, 10, 100].indexOf(f.mode) < 0) f.mode = 1;
+    if (typeof f.ach !== 'object' || f.ach === null) f.ach = {};
+    return f;
+  }
+  function load() {
+    var raw = null;
+    try { raw = localStorage.getItem(SAVE_KEY); } catch (err) { raw = null; }
+    if (!raw) return null;
+    try { return normalize(JSON.parse(raw)); } catch (err) { return null; }
+  }
+  function parseAmount(txt) {
+    var m = String(txt).trim().toLowerCase().match(/^([0-9]*\.?[0-9]+(?:e[+-]?[0-9]+)?)\s*([a-z]{0,6})$/);
+    if (!m) return null;
+    var v = parseFloat(m[1]), suf = m[2];
+    if (suf) {
+      var idx = tierFromSuffix(suf);
+      if (idx < 1) return null;
+      v *= Math.pow(1000, idx);
+    }
+    return isFinite(v) ? v : null;
+  }
+  function devReadout() {
+    var e = eraIdx(), thr = rebirthThreshold();
+    var rows = [
+      ['CPS', fmt(cps())],
+      ['Per tap', fmt(click())],
+      ['Output mult', '×' + globalMult().toFixed(2)],
+      ['Tap mult', '×' + fmt(clickMult())],
+      ['Trophies', trophyCount() + '/' + AC.length],
+      ['Era', e + ' (' + ERA[e].name + ')'],
+      ['Run / need', fmt(S.run) + ' / ' + fmt(thr)],
+      ['Tokens ready', fmt(tokensNow())],
+      ['Upgrades', String(owned())],
+      ['Speed', '×' + speed]
+    ];
+    return rows.map(function (r) { return (r[0] + '                ').slice(0, 14) + r[1]; }).join('\n');
+  }
+
+  /* ---------- Wiring ---------- */
+  function setTab(which) {
+    var led = which === 'ledger';
+    $('tabLedger').setAttribute('aria-selected', String(led));
+    $('tabTrophies').setAttribute('aria-selected', String(!led));
+    $('panelLedger').hidden = !led;
+    $('panelTrophies').hidden = led;
+  }
+
+  function init() {
+    var loaded = load();
+    var away = 0;
+    if (loaded) {
+      S = loaded;
+      away = Math.min((Date.now() - S.t) / 1000, 8 * 3600);
+      S.awayMax = Math.max(S.awayMax || 0, away);
+    }
+    buildMarket(); buildBoosts(); buildChal(); buildShop(); renderTrophies(); initSettings(); initBoard();
+    $('tabLedger').addEventListener('click', function () { setTab('ledger'); });
+    $('tabTrophies').addEventListener('click', function () { setTab('trophies'); });
+    $('coin').addEventListener('click', doClick);
+    $('anomaly').addEventListener('click', catchAnomaly);
+    $('rebirthBtn').addEventListener('click', rebirth);
+    $('buyBest').addEventListener('click', buyBest);
+    $('eraBtn').addEventListener('click', buyEra);
+    $('autoToggle').addEventListener('click', function () { S.auto = !S.auto; update(); });
+    document.querySelectorAll('.mode').forEach(function (b) {
+      b.addEventListener('click', function () { S.mode = Number(b.dataset.m); update(); });
+    });
+
+    // Operator console
+    var SAFE = ['dSave', 'dExport', 'dImport', 'dWipe', 'dToast'];
+    function bind(id, fn) {
+      $(id).addEventListener('click', function (ev) {
+        if (SAFE.indexOf(id) < 0 && !S.cheated) { S.cheated = true; toast('Operator console used. This save is now off the leaderboards.'); }
+        fn(ev);
+      });
+    }
+    function amt() {
+      var a = parseAmount($('dAmt').value);
+      if (a === null) toast('Enter a number like 5000, 1e9 or 2.5b.');
+      return a;
+    }
+    $('dEra').innerHTML = ERA.map(function (E, i) { return '<option value="' + i + '">' + NUMERALS[i] + ' ' + E.name + '</option>'; }).join('');
+
+    bind('dAdd', function () { var a = amt(); if (a === null) return; S.bal += a; S.run += a; S.life += a; update(); });
+    bind('dSet', function () { var a = amt(); if (a === null) return; S.bal = a; update(); });
+    bind('dMul', function () { S.bal *= 10; update(); });
+    bind('dTokAdd', function () { var a = amt(); if (a === null) return; S.tokens += Math.floor(a); update(); });
+    bind('dTokSet', function () { var a = amt(); if (a === null) return; S.tokens = Math.floor(a); update(); });
+
+    [['dSkip1', 3600], ['dSkip8', 28800], ['dSkip24', 86400]].forEach(function (p) {
+      bind(p[0], function () {
+        var g = cps() * p[1];
+        S.bal += g; S.run += g; S.life += g;
+        toast('Skipped ' + fmtTime(p[1]) + ': +' + fmt(g));
+        update();
+      });
+    });
+    $('dSpeed').addEventListener('change', function () { speed = Number($('dSpeed').value) || 1; if (speed !== 1) S.cheated = true; update(); });
+
+    bind('dEraGo', function () { S.era = Number($('dEra').value) || 0; update(); });
+    bind('dLvlGo', function () {
+      var n = Math.max(0, Math.floor(Number($('dLvl').value)));
+      if (!isFinite(n)) return;
+      S.levels = UP.map(function () { return n; }); update();
+    });
+    bind('dUnlock', function () { S.levels = S.levels.map(function (l) { return Math.max(l, 1); }); update(); });
+    bind('dReady', function () { S.run = Math.max(S.run, rebirthThreshold()); update(); });
+
+    bind('dRbMax', function () { RB.forEach(function (d) { S.r[d.k] = d.max; }); update(); });
+    bind('dRbReset', function () { S.r = { coin: 0, eff: 0, fort: 0, start: 0, limit: 0 }; update(); });
+    bind('dBoostMax', function () { var m = boostLimit(); S.boost = BOOST.map(function () { return m; }); update(); });
+    bind('dAutoGive', function () { S.autoOwned = true; S.auto = true; update(); });
+
+    bind('dDm', spawnAnomaly);
+    bind('dToast', function () { toast('<b>Test.</b> This is what a notification looks like.'); });
+    bind('dAchAll', function () { AC.forEach(function (a) { S.ach[a[0]] = 1; }); renderTrophies(); update(); });
+    bind('dAchNone', function () { S.ach = {}; renderTrophies(); update(); });
+    bind('dCps', function () {
+      filtering = !filtering;
+      $('dCps').textContent = 'Tap limit: ' + (filtering ? 'on' : 'off');
+    });
+
+    bind('dSave', save);
+    bind('dExport', function () {
+      S.t = Date.now();
+      var code = btoa(JSON.stringify(S));
+      var box = $('dBox');
+      box.value = code;
+      box.focus(); box.select();
+      try {
+        navigator.clipboard.writeText(code).then(function () { toast('Save code copied.'); }, function () { toast('Save code is in the box. Copy it from there.'); });
+      } catch (err) { toast('Save code is in the box. Copy it from there.'); }
+    });
+    bind('dImport', function () {
+      var txt = $('dBox').value.trim();
+      if (!txt) { toast('Paste a save code first.'); return; }
+      try {
+        var raw = txt.charAt(0) === '{' ? txt : atob(txt);
+        S = normalize(JSON.parse(raw));
+        shownEra = -1; clickTimes = [];
+        renderTrophies(); applyEra(eraIdx()); update();
+        toast('Save imported.');
+      } catch (err) { toast('That save code could not be read.'); }
+    });
+    bind('dWipe', function () {
+      var now = Date.now(), b = $('dWipe');
+      if (now > wipeArmedUntil) {
+        wipeArmedUntil = now + 4000;
+        b.textContent = 'Click again to wipe';
+        setTimeout(function () { b.textContent = 'Wipe save'; }, 4000);
+        return;
+      }
+      wipeArmedUntil = 0;
+      try { localStorage.removeItem(SAVE_KEY); } catch (err) {}
+      S = fresh(); shownEra = -1; clickTimes = [];
+      b.textContent = 'Wipe save';
+      renderTrophies(); applyEra(0); update();
+      toast('Save wiped. Starting over.');
+    });
+    $('dev').addEventListener('toggle', function () { if ($('dev').open) $('dRead').textContent = devReadout(); });
+
+    document.addEventListener('visibilitychange', function () { if (document.hidden) save(); });
+    window.addEventListener('pagehide', save);
+
+    applyEra(eraIdx());
+    update();
+
+    if (away > 60) {
+      var gain = cps() * away;
+      if (gain > 0) {
+        S.bal += gain; S.run += gain; S.life += gain;
+        toast('<b>Welcome back.</b> Away ' + fmtTime(away) + ', earned ' + fmt(gain) + '.');
+      }
+    }
+    checkAch();
+    update();
+    scheduleAnomaly();
+
+    var last = Date.now(), autoT = 0, saveT = 0;
+    setInterval(function () {
+      var now = Date.now();
+      if (!document.hidden) S.played += Math.min((now - last) / 1000, 5);
+      var dt = Math.min((now - last) / 1000, 86400) * speed;
+      last = now;
+      var p = cps() * dt;
+      S.bal += p; S.run += p; S.life += p;
+      autoT += dt; saveT += dt;
+      if (S.autoOwned && S.auto && autoT >= 0.1) { autoT = 0; autoBuy(); }
+      if (saveT >= 10) { saveT = 0; save(); }
+      if (S.run > S.bestRun) S.bestRun = S.run;
+      checkAch();
+      update();
+    }, 100);
+  }
+
+  init();
+})();
+</script>
+
+</body></html>
