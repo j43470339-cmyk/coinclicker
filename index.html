@@ -333,7 +333,7 @@ dl.stats dd.tok { color: var(--tok); }
 }
 .chal-banner{width:min(440px,100%);background:var(--tok);color:var(--tok-ink);font-weight:700;font-size:.85rem;padding:6px 14px;border-radius:6px;text-align:center}
 .coin{touch-action:manipulation}
-#lbName{background:rgba(0,0,0,.28);border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:7px 10px;font:inherit;min-width:0;flex:1 1 160px;user-select:text;-webkit-user-select:text}
+#acUser,#acPass{background:rgba(0,0,0,.28);border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:7px 10px;font:inherit;min-width:0;flex:1 1 160px;user-select:text;-webkit-user-select:text}
 </style>
 
 <div class="app">
@@ -559,10 +559,7 @@ dl.stats dd.tok { color: var(--tok); }
       <button class="btn-ghost" id="boardClose">Close</button>
     </div>
     <p class="board-status" id="boardStatus">Connecting…</p>
-    <div class="devrow" id="lbNameRow" hidden>
-      <input id="lbName" maxlength="20" placeholder="Your name" aria-label="Leaderboard name" autocomplete="off" spellcheck="false">
-      <button class="btn-ghost" id="lbNameSave">Save name</button>
-    </div>
+
     <div class="board-grid" id="boardGrid"></div>
   </div>
 </div>
@@ -605,9 +602,18 @@ dl.stats dd.tok { color: var(--tok); }
     <div class="set-group">
       <h3>Account</h3>
       <p class="rebirth-note" id="acctInfo">Checking your account…</p>
+      <div class="devrow" id="acForm" hidden>
+        <input id="acUser" maxlength="20" placeholder="Username" aria-label="Username" autocomplete="username" spellcheck="false">
+        <input id="acPass" type="password" placeholder="Password" aria-label="Password" autocomplete="current-password">
+      </div>
+      <div class="devrow" id="acBtns" hidden>
+        <button class="btn-ghost" id="acLogin">Log in</button>
+        <button class="btn-ghost" id="acSignup">Sign up</button>
+      </div>
       <div class="devrow">
         <button class="btn-ghost" id="cloudSave">Save to cloud</button>
         <button class="btn-ghost" id="cloudLoad">Load from cloud</button>
+        <button class="btn-ghost" id="acLogout" hidden>Log out</button>
       </div>
       <p class="rebirth-note" id="cloudInfo"></p>
     </div>
@@ -633,8 +639,8 @@ dl.stats dd.tok { color: var(--tok); }
   var actx = null;
   // Leaderboard backend for when the game is hosted outside claude.ai (for example GitHub Pages).
   // Create a free Supabase project, run the SQL from the setup notes, then paste its URL and anon key here.
-  var LB_URL = 'https://sfafhigzdgjsjefwmmnh.supabase.co';   // e.g. 'https://abcdxyz.supabase.co'
-  var LB_KEY = 'sb_publishable_jVoYucStz31h9S6uev3qEA_5DIxhcDF';   // the project's public anon key
+  var LB_URL = '';   // e.g. 'https://abcdxyz.supabase.co'
+  var LB_KEY = '';   // the project's public anon key
 
   function loadSettings() {
     try {
@@ -723,17 +729,45 @@ dl.stats dd.tok { color: var(--tok); }
   ];
   function myScores() { return { tokens: S.tokensEarned, currency: S.life, played: Math.floor(S.played), spent: S.spent }; }
 
-  /* Hosted leaderboard (Supabase REST, one row per player, no sign-in) */
-  function lbHeaders(json) {
+  /* Hosted accounts, cloud saves and leaderboard (Supabase Auth + REST, no SDK) */
+  var acct = null;
+  function acEmail(u) { return u + '@coinclicker.game'; }
+  function storeAcct() {
+    try { if (acct) localStorage.setItem('coin-clicker-acct', JSON.stringify(acct)); else localStorage.removeItem('coin-clicker-acct'); } catch (err) {}
+  }
+  function authReq(path, body) {
+    return fetch(LB_URL + '/auth/v1/' + path, { method: 'POST', headers: { apikey: LB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j || {} }; }, function () { return { ok: r.ok, j: {} }; }); });
+  }
+  function setSession(j, name) {
+    acct = { uid: j.user && j.user.id, name: name, access: j.access_token, refresh: j.refresh_token, exp: Date.now() + (j.expires_in || 3600) * 1000 };
+    storeAcct();
+    lb.uid = acct.uid; lb.name = name; lb.lastSig = '';
+  }
+  function dropSession() { acct = null; storeAcct(); lb.uid = null; lb.name = ''; lb.lastSig = ''; }
+  function tokenP() {
+    if (!acct) return Promise.reject(new Error('no account'));
+    if (acct.exp - Date.now() > 60000) return Promise.resolve(acct.access);
+    return authReq('token?grant_type=refresh_token', { refresh_token: acct.refresh }).then(function (x) {
+      if (!x.ok || !x.j.access_token) { dropSession(); throw new Error('expired'); }
+      acct.access = x.j.access_token; acct.refresh = x.j.refresh_token || acct.refresh; acct.exp = Date.now() + (x.j.expires_in || 3600) * 1000;
+      storeAcct();
+      return acct.access;
+    });
+  }
+  function hdr(tok, json) {
     var h = { apikey: LB_KEY };
+    if (tok) h.Authorization = 'Bearer ' + tok;
     if (json) { h['Content-Type'] = 'application/json'; h.Prefer = 'resolution=merge-duplicates,return=minimal'; }
     return h;
   }
-  function postRow(row) {
-    return fetch(LB_URL + '/rest/v1/scores?on_conflict=id', { method: 'POST', headers: lbHeaders(true), body: JSON.stringify(row) });
+  function postRow(row, table) {
+    return tokenP().then(function (tok) {
+      return fetch(LB_URL + '/rest/v1/' + (table || 'scores') + '?on_conflict=id', { method: 'POST', headers: hdr(tok, true), body: JSON.stringify(row) });
+    });
   }
   function submitRest() {
-    if (!lb.uid || !lb.name || S.cheated || !settings.board || lb.writing || document.hidden) return;
+    if (!acct || !lb.uid || S.cheated || !settings.board || lb.writing || document.hidden) return;
     var sc = myScores();
     if (![sc.tokens, sc.currency, sc.played, sc.spent].every(function (x) { return isFinite(x); })) return;
     var sig = JSON.stringify([lb.name, sc.tokens, Math.floor(sc.currency), sc.played, Math.floor(sc.spent)]);
@@ -747,7 +781,7 @@ dl.stats dd.tok { color: var(--tok); }
   function fetchRows() {
     if (lb.mode !== 'rest') return;
     var timer = setTimeout(function () { lb.slow = true; renderBoards(); }, 10000);
-    fetch(LB_URL + '/rest/v1/scores?select=id,name,tokens,currency,played,spent&limit=1000', { headers: lbHeaders(false) })
+    fetch(LB_URL + '/rest/v1/scores?select=id,name,tokens,currency,played,spent&limit=1000', { headers: hdr(null, false) })
       .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
       .then(function (rows) {
         clearTimeout(timer); lb.slow = false; lb.err = null; lb.ready = true;
@@ -758,30 +792,68 @@ dl.stats dd.tok { color: var(--tok); }
       })
       .catch(function () { clearTimeout(timer); lb.err = 'error'; renderBoards(); });
   }
-  function saveName() {
-    var v = $('lbName').value.replace(/\s+/g, ' ').trim().slice(0, 20);
-    if (!v) return;
-    lb.name = v;
-    try { localStorage.setItem('coin-clicker-name', v); } catch (err) {}
-    $('lbName').value = v;
-    lb.lastSig = '';
-    submitScore();
-    setTimeout(fetchRows, 900);
-    renderBoards();
+  function doAuth(signup) {
+    var u = $('acUser').value.trim().toLowerCase(), pw = $('acPass').value;
+    if (!/^[a-z0-9_]{3,20}$/.test(u)) { cloudMsg('Username: 3 to 20 letters, numbers or underscores.'); return; }
+    if (pw.length < 6) { cloudMsg('Your password needs at least 6 characters.'); return; }
+    cloudMsg(signup ? 'Creating your account…' : 'Logging in…');
+    authReq(signup ? 'signup' : 'token?grant_type=password', { email: acEmail(u), password: pw }).then(function (x) {
+      if (!x.ok) { cloudMsg(x.j.msg || x.j.error_description || x.j.message || 'That did not work. Check your details.'); return; }
+      if (!x.j.access_token) { cloudMsg('Sign-up needs "Confirm email" switched off in your Supabase settings.'); return; }
+      setSession(x.j, u);
+      $('acPass').value = '';
+      toast('<b>' + (signup ? 'Account created.' : 'Logged in.') + '</b> Welcome, ' + u + '.');
+      submitScore(); fetchRows(); restRefresh();
+    }, function () { cloudMsg('Could not reach the server. Try again.'); });
+  }
+  function restRefresh() {
+    var on = !!acct;
+    $('acctInfo').textContent = on
+      ? 'Logged in as ' + acct.name + '. Cloud saves and leaderboard scores use this account.'
+      : 'Log in or sign up to use cloud saves and appear on the leaderboards. There is no password reset, so remember your password.';
+    $('acForm').hidden = on; $('acBtns').hidden = on; $('acLogout').hidden = !on;
+    $('cloudSave').disabled = !on; $('cloudLoad').disabled = !on;
+    if (!on) return;
+    tokenP().then(function (tok) {
+      return fetch(LB_URL + '/rest/v1/saves?select=updated_at&id=eq.' + encodeURIComponent(acct.uid), { headers: hdr(tok, false) });
+    }).then(function (r) { return r.ok ? r.json() : []; }).then(function (rows) {
+      if (!acct) return;
+      cloudMsg(rows && rows[0] && rows[0].updated_at ? 'Last cloud save: ' + new Date(rows[0].updated_at).toLocaleString() : 'No cloud save yet.');
+    }).catch(function () {});
+  }
+  function restCloudSave() {
+    var data;
+    try { data = JSON.parse(JSON.stringify(S)); } catch (err) { cloudMsg('Could not read the save.'); return; }
+    postRow({ id: acct.uid, data: data, updated_at: new Date().toISOString() }, 'saves').then(function (r) {
+      cloudMsg(r.ok ? 'Saved to the cloud at ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.' : 'Cloud save failed. Try again.');
+    }, function () { cloudMsg('Cloud save failed. Log in again.'); });
+  }
+  function restCloudLoad() {
+    var now = Date.now();
+    if (now > cloudArmed) { cloudArmed = now + 4000; cloudMsg('Click Load again to replace this save with your cloud save.'); return; }
+    cloudArmed = 0;
+    tokenP().then(function (tok) {
+      return fetch(LB_URL + '/rest/v1/saves?select=data&id=eq.' + encodeURIComponent(acct.uid), { headers: hdr(tok, false) });
+    }).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (rows) {
+      if (!rows || !rows[0] || !rows[0].data) { cloudMsg('There is no cloud save yet.'); return; }
+      S = normalize(rows[0].data);
+      shownEra = -1; shownCoin = -1; clickTimes = [];
+      renderTrophies(); applyEra(eraIdx()); update(); save();
+      lb.lastSig = ''; submitScore();
+      cloudMsg('Loaded your cloud save.');
+      toast('<b>Cloud save loaded.</b>');
+    }).catch(function () { cloudMsg('Could not load the cloud save. Try again.'); });
   }
   function initRestBoard() {
     LB_URL = LB_URL.replace(/\/+$/, '');
     lb.mode = 'rest'; lb.state = 'on'; lb.canWrite = true;
-    try {
-      var pid = localStorage.getItem('coin-clicker-pid');
-      if (!pid) { pid = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); localStorage.setItem('coin-clicker-pid', pid); }
-      lb.uid = pid;
-      lb.name = localStorage.getItem('coin-clicker-name') || '';
-    } catch (err) { lb.uid = null; }
-    $('lbNameRow').hidden = false;
-    $('lbName').value = lb.name;
-    $('lbNameSave').addEventListener('click', saveName);
-    $('lbName').addEventListener('keydown', function (e) { if (e.key === 'Enter') saveName(); });
+    try { acct = JSON.parse(localStorage.getItem('coin-clicker-acct') || 'null'); } catch (err) { acct = null; }
+    if (acct && acct.uid && acct.name) { lb.uid = acct.uid; lb.name = acct.name; } else acct = null;
+    $('acLogin').addEventListener('click', function () { doAuth(false); });
+    $('acSignup').addEventListener('click', function () { doAuth(true); });
+    $('acPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') doAuth(false); });
+    $('acLogout').addEventListener('click', function () { dropSession(); restRefresh(); renderBoards(); cloudMsg('Logged out.'); });
+    restRefresh();
     fetchRows();
     submitScore();
     setInterval(submitScore, 90000);
@@ -813,8 +885,8 @@ dl.stats dd.tok { color: var(--tok); }
     $('cloudSave').addEventListener('click', cloudSave);
     $('cloudLoad').addEventListener('click', cloudLoad);
     if (!window.claude || !window.claude.use) {
-      $('acctInfo').parentNode.hidden = true;
       if (LB_URL && LB_KEY) { initRestBoard(); return; }
+      $('acctInfo').parentNode.hidden = true;
       lb.state = 'off';
       $('boardOpen').hidden = true;
       $('setBoard').closest('.set-group').hidden = true;
@@ -849,6 +921,7 @@ dl.stats dd.tok { color: var(--tok); }
   function cloudRef() { return lb.db && lb.uid ? lb.db.doc('data/users/' + lb.uid + '/save') : null; }
   function cloudMsg(t) { $('cloudInfo').textContent = t; }
   function refreshAccount() {
+    if (lb.mode === 'rest') { restRefresh(); return; }
     var info = $('acctInfo'), ok = lb.state === 'on' && !!lb.uid;
     $('cloudSave').disabled = !ok;
     $('cloudLoad').disabled = !ok;
@@ -864,6 +937,7 @@ dl.stats dd.tok { color: var(--tok); }
     }, function () {});
   }
   function cloudSave() {
+    if (lb.mode === 'rest') { if (acct) restCloudSave(); return; }
     var ref = cloudRef();
     if (!ref) return;
     var data;
@@ -876,6 +950,7 @@ dl.stats dd.tok { color: var(--tok); }
     });
   }
   function cloudLoad() {
+    if (lb.mode === 'rest') { if (acct) restCloudLoad(); return; }
     var ref = cloudRef();
     if (!ref) return;
     var now = Date.now();
@@ -910,8 +985,7 @@ dl.stats dd.tok { color: var(--tok); }
     else if (lb.err) msg = 'Could not load the leaderboard. Try reopening the page.';
     else if (!lb.ready) msg = lb.slow ? 'Still connecting. Scores may be out of date.' : 'Loading scores…';
     else if (S.cheated) msg = 'You used the operator console on this save, so your scores are not submitted. Wiping the save lets you compete again.';
-    else if (lb.mode === 'rest' && !lb.uid) msg = 'Your browser is blocking storage, so scores cannot be submitted.';
-    else if (lb.mode === 'rest' && !lb.name) msg = 'Enter a name below to appear on the leaderboards.';
+    else if (lb.mode === 'rest' && !lb.uid) msg = 'Log in from Settings to appear on the leaderboards.';
     else if (!lb.uid) msg = 'Sign in to appear on the leaderboards.';
     else if (!lb.canWrite) msg = 'You have view-only access, so your scores are not submitted.';
     else if (!settings.board) msg = 'You are hidden from the leaderboards. Turn this on in Settings.';
