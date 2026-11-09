@@ -797,7 +797,11 @@ dl.stats dd.tok { color: var(--tok); }
         clearTimeout(timer); lb.err = 'error';
         lb.errText = (e && e.message) || 'network error';
         if (e && e.body && /PGRST205|schema cache|does not exist/i.test(e.body)) lb.errText = 'the scores table is missing, so run the setup SQL in Supabase';
-        else if (e && /HTTP 40[13]/.test(e.message || '')) lb.errText = 'Supabase rejected the key or the table permissions';
+        else if (e && /HTTP 40[13]/.test(e.message || '')) {
+          var why = '';
+          try { var jb = JSON.parse(e.body); why = jb.message || jb.error_description || jb.hint || ''; } catch (err2) {}
+          lb.errText = e.message + (why ? ': ' + why : ', Supabase rejected the key or the table permissions');
+        }
         renderBoards();
       });
   }
