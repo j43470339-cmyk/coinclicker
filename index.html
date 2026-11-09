@@ -729,42 +729,36 @@ dl.stats dd.tok { color: var(--tok); }
   ];
   function myScores() { return { tokens: S.tokensEarned, currency: S.life, played: Math.floor(S.played), spent: S.spent }; }
 
-  /* Hosted accounts, cloud saves and leaderboard (Supabase Auth + REST, no SDK) */
+  /* Hosted accounts, cloud saves and leaderboard (Supabase tables + SQL functions, no email or Supabase Auth needed) */
   var acct = null;
-  function acEmail(u) { return u + '@coinclicker.game'; }
   function storeAcct() {
-    try { if (acct) localStorage.setItem('coin-clicker-acct', JSON.stringify(acct)); else localStorage.removeItem('coin-clicker-acct'); } catch (err) {}
+    try { if (acct) localStorage.setItem('coin-clicker-acct2', JSON.stringify(acct)); else localStorage.removeItem('coin-clicker-acct2'); } catch (err) {}
   }
-  function authReq(path, body) {
-    return fetch(LB_URL + '/auth/v1/' + path, { method: 'POST', headers: { apikey: LB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j || {} }; }, function () { return { ok: r.ok, j: {} }; }); });
+  function rpc(name, args) {
+    return fetch(LB_URL + '/rest/v1/rpc/' + name, { method: 'POST', headers: { apikey: LB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(args) })
+      .then(function (r) {
+        return r.text().then(function (t) {
+          var j = null;
+          try { j = t ? JSON.parse(t) : null; } catch (err) {}
+          if (!r.ok) {
+            var e = new Error((j && (j.message || j.hint)) || ('HTTP ' + r.status));
+            e.status = r.status;
+            throw e;
+          }
+          return j;
+        });
+      });
   }
-  function setSession(j, name) {
-    acct = { uid: j.user && j.user.id, name: name, access: j.access_token, refresh: j.refresh_token, exp: Date.now() + (j.expires_in || 3600) * 1000 };
-    storeAcct();
-    lb.uid = acct.uid; lb.name = name; lb.lastSig = '';
+  function errMsg(e) {
+    if (e && e.status === 404) return 'The account functions are missing. Run the setup SQL in Supabase.';
+    if (e && e.status) return e.message;
+    return 'Could not reach the server. Try again.';
   }
+  function setSession(token, name) { acct = { token: token, name: name }; storeAcct(); lb.uid = name; lb.name = name; lb.lastSig = ''; }
   function dropSession() { acct = null; storeAcct(); lb.uid = null; lb.name = ''; lb.lastSig = ''; }
-  function tokenP() {
-    if (!acct) return Promise.reject(new Error('no account'));
-    if (acct.exp - Date.now() > 60000) return Promise.resolve(acct.access);
-    return authReq('token?grant_type=refresh_token', { refresh_token: acct.refresh }).then(function (x) {
-      if (!x.ok || !x.j.access_token) { dropSession(); throw new Error('expired'); }
-      acct.access = x.j.access_token; acct.refresh = x.j.refresh_token || acct.refresh; acct.exp = Date.now() + (x.j.expires_in || 3600) * 1000;
-      storeAcct();
-      return acct.access;
-    });
-  }
-  function hdr(tok, json) {
-    var h = { apikey: LB_KEY };
-    if (tok) h.Authorization = 'Bearer ' + tok;
-    if (json) { h['Content-Type'] = 'application/json'; h.Prefer = 'resolution=merge-duplicates,return=minimal'; }
-    return h;
-  }
-  function postRow(row, table) {
-    return tokenP().then(function (tok) {
-      return fetch(LB_URL + '/rest/v1/' + (table || 'scores') + '?on_conflict=id', { method: 'POST', headers: hdr(tok, true), body: JSON.stringify(row) });
-    });
+  function sessionLost(e) {
+    if (e && /not logged in/i.test(e.message || '')) { dropSession(); restRefresh(); renderBoards(); cloudMsg('Your login expired. Please log in again.'); return true; }
+    return false;
   }
   function submitRest() {
     if (!acct || !lb.uid || S.cheated || !settings.board || lb.writing || document.hidden) return;
@@ -773,15 +767,14 @@ dl.stats dd.tok { color: var(--tok); }
     var sig = JSON.stringify([lb.name, sc.tokens, Math.floor(sc.currency), sc.played, Math.floor(sc.spent)]);
     if (sig === lb.lastSig) return;
     lb.writing = true;
-    postRow({ id: lb.uid, name: lb.name, tokens: sc.tokens, currency: sc.currency, played: sc.played, spent: sc.spent }).then(function (r) {
-      lb.writing = false;
-      if (r.ok) lb.lastSig = sig;
-    }, function () { lb.writing = false; });
+    rpc('app_submit', { p_token: acct.token, p_tokens: sc.tokens, p_currency: sc.currency, p_played: sc.played, p_spent: sc.spent }).then(function () {
+      lb.writing = false; lb.lastSig = sig;
+    }, function (e) { lb.writing = false; sessionLost(e); });
   }
   function fetchRows() {
     if (lb.mode !== 'rest') return;
     var timer = setTimeout(function () { lb.slow = true; renderBoards(); }, 10000);
-    fetch(LB_URL + '/rest/v1/scores?select=id,name,tokens,currency,played,spent&limit=1000', { headers: hdr(null, false) })
+    fetch(LB_URL + '/rest/v1/scores?select=id,name,tokens,currency,played,spent&limit=1000', { headers: { apikey: LB_KEY } })
       .then(function (r) {
         if (r.ok) return r.json();
         return r.text().then(function (t) { var e = new Error('HTTP ' + r.status); e.body = t; throw e; });
@@ -810,18 +803,13 @@ dl.stats dd.tok { color: var(--tok); }
     if (!/^[a-z0-9_]{3,20}$/.test(u)) { cloudMsg('Username: 3 to 20 letters, numbers or underscores.'); return; }
     if (pw.length < 6) { cloudMsg('Your password needs at least 6 characters.'); return; }
     cloudMsg(signup ? 'Creating your account…' : 'Logging in…');
-    authReq(signup ? 'signup' : 'token?grant_type=password', { email: acEmail(u), password: pw }).then(function (x) {
-      if (!x.ok) {
-        var em = x.j.msg || x.j.error_description || x.j.message || 'That did not work. Check your details.';
-        if (signup && /email/i.test(em)) em += ' (If this keeps happening, turn off "Confirm email" in Supabase under Authentication.)';
-        cloudMsg(em); return;
-      }
-      if (!x.j.access_token) { cloudMsg('Sign-up needs "Confirm email" switched off in your Supabase settings.'); return; }
-      setSession(x.j, u);
+    rpc(signup ? 'app_signup' : 'app_login', { p_user: u, p_pass: pw }).then(function (tok) {
+      if (!tok) { cloudMsg('That did not work. Try again.'); return; }
+      setSession(tok, u);
       $('acPass').value = '';
       toast('<b>' + (signup ? 'Account created.' : 'Logged in.') + '</b> Welcome, ' + u + '.');
       submitScore(); fetchRows(); restRefresh();
-    }, function () { cloudMsg('Could not reach the server. Try again.'); });
+    }, function (e) { cloudMsg(errMsg(e)); });
   }
   function restRefresh() {
     var on = !!acct;
@@ -831,45 +819,44 @@ dl.stats dd.tok { color: var(--tok); }
     $('acForm').hidden = on; $('acBtns').hidden = on; $('acLogout').hidden = !on;
     $('cloudSave').disabled = !on; $('cloudLoad').disabled = !on;
     if (!on) return;
-    tokenP().then(function (tok) {
-      return fetch(LB_URL + '/rest/v1/saves?select=updated_at&id=eq.' + encodeURIComponent(acct.uid), { headers: hdr(tok, false) });
-    }).then(function (r) { return r.ok ? r.json() : []; }).then(function (rows) {
+    rpc('app_cloud_load', { p_token: acct.token }).then(function (r) {
       if (!acct) return;
-      cloudMsg(rows && rows[0] && rows[0].updated_at ? 'Last cloud save: ' + new Date(rows[0].updated_at).toLocaleString() : 'No cloud save yet.');
-    }).catch(function () {});
+      cloudMsg(r && r.updated_at ? 'Last cloud save: ' + new Date(r.updated_at).toLocaleString() : 'No cloud save yet.');
+    }, function (e) { sessionLost(e); });
   }
   function restCloudSave() {
     var data;
     try { data = JSON.parse(JSON.stringify(S)); } catch (err) { cloudMsg('Could not read the save.'); return; }
-    postRow({ id: acct.uid, data: data, updated_at: new Date().toISOString() }, 'saves').then(function (r) {
-      cloudMsg(r.ok ? 'Saved to the cloud at ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.' : 'Cloud save failed. Try again.');
-    }, function () { cloudMsg('Cloud save failed. Log in again.'); });
+    rpc('app_cloud_save', { p_token: acct.token, p_data: data }).then(function () {
+      cloudMsg('Saved to the cloud at ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.');
+    }, function (e) { if (!sessionLost(e)) cloudMsg('Cloud save failed. ' + errMsg(e)); });
   }
   function restCloudLoad() {
     var now = Date.now();
     if (now > cloudArmed) { cloudArmed = now + 4000; cloudMsg('Click Load again to replace this save with your cloud save.'); return; }
     cloudArmed = 0;
-    tokenP().then(function (tok) {
-      return fetch(LB_URL + '/rest/v1/saves?select=data&id=eq.' + encodeURIComponent(acct.uid), { headers: hdr(tok, false) });
-    }).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (rows) {
-      if (!rows || !rows[0] || !rows[0].data) { cloudMsg('There is no cloud save yet.'); return; }
-      S = normalize(rows[0].data);
+    rpc('app_cloud_load', { p_token: acct.token }).then(function (r) {
+      if (!r || !r.data) { cloudMsg('There is no cloud save yet.'); return; }
+      S = normalize(r.data);
       shownEra = -1; shownCoin = -1; clickTimes = [];
       renderTrophies(); applyEra(eraIdx()); update(); save();
       lb.lastSig = ''; submitScore();
       cloudMsg('Loaded your cloud save.');
       toast('<b>Cloud save loaded.</b>');
-    }).catch(function () { cloudMsg('Could not load the cloud save. Try again.'); });
+    }, function (e) { if (!sessionLost(e)) cloudMsg('Could not load the cloud save. ' + errMsg(e)); });
   }
   function initRestBoard() {
     LB_URL = LB_URL.replace(/\/+$/, '');
     lb.mode = 'rest'; lb.state = 'on'; lb.canWrite = true;
-    try { acct = JSON.parse(localStorage.getItem('coin-clicker-acct') || 'null'); } catch (err) { acct = null; }
-    if (acct && acct.uid && acct.name) { lb.uid = acct.uid; lb.name = acct.name; } else acct = null;
+    try { acct = JSON.parse(localStorage.getItem('coin-clicker-acct2') || 'null'); } catch (err) { acct = null; }
+    if (acct && acct.token && acct.name) { lb.uid = acct.name; lb.name = acct.name; } else acct = null;
     $('acLogin').addEventListener('click', function () { doAuth(false); });
     $('acSignup').addEventListener('click', function () { doAuth(true); });
     $('acPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') doAuth(false); });
-    $('acLogout').addEventListener('click', function () { dropSession(); restRefresh(); renderBoards(); cloudMsg('Logged out.'); });
+    $('acLogout').addEventListener('click', function () {
+      if (acct) rpc('app_logout', { p_token: acct.token }).catch(function () {});
+      dropSession(); restRefresh(); renderBoards(); cloudMsg('Logged out.');
+    });
     restRefresh();
     fetchRows();
     submitScore();
@@ -1069,7 +1056,7 @@ dl.stats dd.tok { color: var(--tok); }
     $('setBoard').addEventListener('change', function () {
       settings.board = $('setBoard').checked; saveSettings(); applySettings();
       if (!settings.board) {
-        if (lb.mode === 'rest') { if (lb.name && lb.uid) postRow({ id: lb.uid, name: lb.name, tokens: 0, currency: 0, played: 0, spent: 0 }).catch(function () {}); }
+        if (lb.mode === 'rest') { if (acct) rpc('app_unrank', { p_token: acct.token }).catch(function () {}); }
         else if (lb.db && lb.uid) { try { lb.db.doc('scores/' + lb.uid).delete().catch(function () {}); } catch (err) {} }
         lb.lastSig = '';
       } else submitScore();
