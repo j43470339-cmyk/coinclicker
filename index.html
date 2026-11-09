@@ -333,6 +333,7 @@ dl.stats dd.tok { color: var(--tok); }
 }
 .chal-banner{width:min(440px,100%);background:var(--tok);color:var(--tok-ink);font-weight:700;font-size:.85rem;padding:6px 14px;border-radius:6px;text-align:center}
 .coin{touch-action:manipulation}
+#sideTabs .tab{padding:9px 4px;font-size:.85rem}
 #acUser,#acPass{background:rgba(0,0,0,.28);border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:7px 10px;font:inherit;min-width:0;flex:1 1 160px;user-select:text;-webkit-user-select:text}
 </style>
 
@@ -421,6 +422,7 @@ dl.stats dd.tok { color: var(--tok); }
         <button class="tab" role="tab" data-st="boost" aria-selected="true">Boosts</button>
         <button class="tab" role="tab" data-st="chal" aria-selected="false">Challenges</button>
         <button class="tab" role="tab" data-st="rebirth" aria-selected="false">Rebirth</button>
+        <button class="tab" role="tab" data-st="prestige" aria-selected="false">Prestige</button>
       </div>
       <div class="panel" id="boostPanel">
         <div>
@@ -451,6 +453,22 @@ dl.stats dd.tok { color: var(--tok); }
         <div class="eyebrow">Dimensional Matrix</div>
         <div class="modes" id="rmodes"><span class="eyebrow">Buy</span><button class="mode" data-rm="1" aria-pressed="true">×1</button><button class="mode" data-rm="10" aria-pressed="false">×10</button><button class="mode" data-rm="0" aria-pressed="false">Max</button></div>
         <div class="rows" id="shopRows"></div>
+      </div>
+
+      <div class="panel" id="prestigePanel">
+        <div class="rb-head">
+          <h2 style="color:var(--warn)">Prestige</h2>
+          <span class="eyebrow">Stage<span class="rb-tok" id="pStage">0/5</span></span>
+        </div>
+        <p class="rebirth-note">Spends all your tokens and resets your Matrix, rebirths, boosts, upgrades and age. Trophies, challenge trophies and the auto-buyer are kept. Every stage is permanent and stacks.</p>
+        <dl class="stats">
+          <dt>All output</dt><dd id="pOut">×1</dd>
+          <dt>Token gain</dt><dd id="pTok">×1</dd>
+          <dt>Anomaly rewards</dt><dd id="pAno">×1</dd>
+          <dt>Boost max level</dt><dd id="pBoost">+0 levels</dd>
+        </dl>
+        <button class="btn-rebirth" id="prestigeBtn">Prestige</button>
+        <p class="rebirth-note" id="prestigeInfo"></p>
       </div>
     </section>
   </div>
@@ -1159,9 +1177,19 @@ dl.stats dd.tok { color: var(--tok); }
     { k: 'eff',   n: 'Temporal Catalyst',     b: 5,  m: 1.7, max: 30, d: function (l) { return 'All upgrade output +' + (l * 20) + '% → +' + ((l + 1) * 20) + '%'; } },
     { k: 'fort',  n: 'Anomaly Capacitor',     b: 8,  m: 1.8, max: 30, d: function (l) { return 'Anomaly reward ×' + (1 + l * 1.5) + ' → ×' + (1 + (l + 1) * 1.5); } },
     { k: 'start', n: 'Head Start',            b: 6,  m: 2.0, max: 20, d: function (l) { if (S.chal && S.chal.active) return 'Disabled during challenges'; return 'Start with ' + fmt(headCash(l)) + ' → ' + fmt(headCash(l + 1)); } },
-    { k: 'limit', n: 'Boost Limit',          b: 10, m: 3,   max: 10, d: function (l) { return 'Boost level cap ' + (BOOST_BASE_CAP + l * BOOST_CAP_STEP) + ' → ' + (BOOST_BASE_CAP + (l + 1) * BOOST_CAP_STEP); } }
+    { k: 'limit', n: 'Boost Limit',          b: 10, m: 3,   max: 10, d: function (l) { return 'Boost level cap ' + (BOOST_BASE_CAP + 5 * S.prestige + l * BOOST_CAP_STEP) + ' → ' + (BOOST_BASE_CAP + 5 * S.prestige + (l + 1) * BOOST_CAP_STEP); } }
   ];
+  var RB_CUR = {
+    coin:  function (l) { return 'Tap power ×' + fmt(Math.pow(2, l)); },
+    eff:   function (l) { return 'All upgrade output +' + (l * 20) + '%'; },
+    fort:  function (l) { return 'Anomaly reward ×' + (1 + l * 1.5); },
+    start: function (l) { return S.chal && S.chal.active ? 'Disabled during challenges' : 'Start with ' + fmt(headCash(l)); },
+    limit: function (l) { return 'Boost level cap ' + (BOOST_BASE_CAP + 5 * S.prestige + l * BOOST_CAP_STEP); }
+  };
   var AUTO_COST = 100;
+  var PRESTIGE_COST = [1000, 50000, 2.5e6, 1.25e8, 6.25e9];   // tokens needed for each of the 5 stages
+  var prestArmedUntil = 0;
+  function prestMult() { return Math.pow(5, S.prestige); }    // x5 output, x5 anomaly rewards per stage
   var PACE = 2;                               // overall game speed
   var CHAL_STEP = 0.1;                        // +10% output per challenge trophy
   var CH = [
@@ -1247,6 +1275,8 @@ dl.stats dd.tok { color: var(--tok); }
     T('Rebirth', 'lim10',  'Glass Ceiling Broken', 'Max out Boost Limit.',                function () { return S.r.limit >= 10; }),
     T('Rebirth', 'hs1',    'Running Start',        'Buy a Head Start upgrade.',           function () { return S.r.start >= 1; }),
     T('Rebirth', 'auto',   'Hands Free',           'Unlock the Chrono Auto-Buyer.',       function () { return S.autoOwned; }),
+    T('Rebirth', 'pr1',    'Ascended',             'Reach prestige stage 1.',             function () { return S.prestige >= 1; }),
+    T('Rebirth', 'pr5',    'Beyond the Beyond',    'Reach prestige stage 5.',             function () { return S.prestige >= 5; }),
     // Anomalies
     T('Anomalies', 'dm1',   'Anomaly Intercepted', 'Catch a Dark Matter anomaly.',        function () { return S.dmCaught >= 1; }),
     T('Anomalies', 'dm10',  'Anomaly Hunter',      'Catch 10 anomalies.',                 function () { return S.dmCaught >= 10; }),
@@ -1278,7 +1308,7 @@ dl.stats dd.tok { color: var(--tok); }
       r: { coin: 0, eff: 0, fort: 0, start: 0, limit: 0 },
       era: 0,
       auto: false, autoOwned: false, mode: 1, bmode: 1, rmode: 1,
-      ach: {}, dmCaught: 0, awayMax: 0, boost: BOOST.map(function () { return 0; }), head: 0, bestRun: 0, spent: 0, played: 0, tokensEarned: 0, cheated: false, chal: { done: {}, active: null, snap: null }, t: Date.now()
+      ach: {}, dmCaught: 0, awayMax: 0, boost: BOOST.map(function () { return 0; }), head: 0, bestRun: 0, spent: 0, played: 0, tokensEarned: 0, cheated: false, chal: { done: {}, active: null, snap: null }, prestige: 0, t: Date.now()
     };
   }
   var S = fresh();
@@ -1355,7 +1385,7 @@ dl.stats dd.tok { color: var(--tok); }
     for (var k = 0; k < MS.length; k++) if (MS[k] > L) return MS[k];
     return (Math.floor(L / 100) + 1) * 100;
   }
-  function globalMult() { return (1 + 0.2 * S.r.eff) * (1 + BOOST_STEP * S.boost[0]) * eraMult() * trophyMult() * chalMult() * chalProd() * PACE; }
+  function globalMult() { return (1 + 0.2 * S.r.eff) * (1 + BOOST_STEP * S.boost[0]) * eraMult() * trophyMult() * chalMult() * chalProd() * prestMult() * PACE; }
   function cps() {
     var t = 0;
     for (var i = 0; i < UP.length; i++) t += UP[i].cps * S.levels[i] * msMult(i);
@@ -1366,15 +1396,15 @@ dl.stats dd.tok { color: var(--tok); }
     for (var i = 0; i < UP.length; i++) t += UP[i].clk * S.levels[i] * msMult(i);
     return t;
   }
-  function clickMult() { return Math.pow(2, S.r.coin) * (1 + BOOST_STEP * S.boost[1]) * eraMult() * trophyMult() * chalMult() * chalProd() * chalTap() * PACE; }
+  function clickMult() { return Math.pow(2, S.r.coin) * (1 + BOOST_STEP * S.boost[1]) * eraMult() * trophyMult() * chalMult() * chalProd() * chalTap() * prestMult() * PACE; }
   function click() { return clickBase() * clickMult() + cps() * 0.01; }
   function eraIdx() { return Math.min(S.era || 0, ERA.length - 1); }
   function eraMult() { return 1 + ERA_STEP * eraIdx() * (1 + BOOST_STEP * S.boost[4]); }
-  function boostLimit() { return BOOST_BASE_CAP + BOOST_CAP_STEP * S.r.limit; }
+  function boostLimit() { return BOOST_BASE_CAP + BOOST_CAP_STEP * S.r.limit + 5 * S.prestige; }
   function rebirthThreshold() { return 500 * Math.pow(1.05, S.rebirths); }
   function tokensNow() {
     if (S.run < rebirthThreshold()) return 0;
-    return Math.floor(Math.pow(S.run / 500, 0.4) * (1 + BOOST_STEP * S.boost[2]));
+    return Math.floor(Math.pow(S.run / 500, 0.4) * (1 + BOOST_STEP * S.boost[2]) * Math.pow(2, S.prestige));
   }
 
   function geoCost(b, g, L, n) { return Math.ceil(b * Math.pow(g, L) * (Math.pow(g, n) - 1) / (g - 1)); }
@@ -1590,6 +1620,27 @@ dl.stats dd.tok { color: var(--tok); }
     update();
   }
 
+  /* ---------- Prestige ---------- */
+  function prestige() {
+    var st = S.prestige;
+    if (st >= PRESTIGE_COST.length || S.chal.active || S.tokens < PRESTIGE_COST[st]) return;
+    var now = Date.now();
+    if (now > prestArmedUntil) { prestArmedUntil = now + 4000; update(); return; }
+    prestArmedUntil = 0;
+    S.bestRun = Math.max(S.bestRun || 0, S.run);
+    S.prestige = st + 1;
+    S.tokens = 0; S.rebirths = 0;
+    S.r = { coin: 0, eff: 0, fort: 0, start: 0, limit: 0 };
+    S.levels = UP.map(function () { return 0; });
+    S.boost = BOOST.map(function () { return 0; });
+    S.era = 0; S.run = 0; S.head = 0; S.bal = 0;
+    sfx('rebirth');
+    toast('<b>Prestige ' + S.prestige + '.</b> All output and anomaly rewards ×5, token gain ×2, boost cap +5.');
+    save();
+    submitScore();
+    update();
+  }
+
   /* ---------- Challenges ---------- */
   var chalArmed = '', chalArmedUntil = 0;
   function startChal(id) {
@@ -1655,7 +1706,7 @@ dl.stats dd.tok { color: var(--tok); }
     if (el.hidden) return;
     clearTimeout(dmLife);
     el.hidden = true;
-    var reward = Math.max(cps() * 45, click() * 100) * (1 + S.r.fort * 1.5) * (1 + BOOST_STEP * S.boost[3]);
+    var reward = Math.max(cps() * 45, click() * 100) * (1 + S.r.fort * 1.5) * (1 + BOOST_STEP * S.boost[3]) * prestMult();
     S.bal += reward; S.run += reward; S.life += reward; S.dmCaught++;
     sfx('catch');
     toast('<b>Anomaly caught.</b> +' + fmt(reward));
@@ -1896,7 +1947,7 @@ dl.stats dd.tok { color: var(--tok); }
       br.name.textContent = B.n;
       br.lvl.textContent = 'Lv ' + L2 + '/' + lim;
       br.eff.textContent = '+' + Math.round(L2 * BOOST_STEP * 100) + '% ' + B.d;
-      br.sub.textContent = '+' + Math.round(BOOST_STEP * 100) + '% per level';
+      br.sub.textContent = L2 >= lim ? 'Maxed out' : '+' + Math.round(BOOST_STEP * 100) + '% per level';
       if (L2 >= lim) {
         br.bn.textContent = 'MAX'; br.bc.textContent = ''; br.btn.disabled = true;
       } else {
@@ -1922,6 +1973,26 @@ dl.stats dd.tok { color: var(--tok); }
       cr.btn.disabled = on ? false : (done || !!act);
     });
 
+    var ps = S.prestige, pArmed = Date.now() < prestArmedUntil, pb = $('prestigeBtn');
+    $('pStage').textContent = ps + '/' + PRESTIGE_COST.length;
+    $('pOut').textContent = '×' + fmt(prestMult());
+    $('pTok').textContent = '×' + fmt(Math.pow(2, ps));
+    $('pAno').textContent = '×' + fmt(prestMult());
+    $('pBoost').textContent = '+' + (5 * ps) + ' levels';
+    if (ps >= PRESTIGE_COST.length) {
+      pb.disabled = true; pb.classList.remove('armed'); pb.textContent = 'Max prestige';
+      $('prestigeInfo').textContent = 'You have reached the final prestige stage.';
+    } else {
+      var pc = PRESTIGE_COST[ps], pOk = S.tokens >= pc && !S.chal.active;
+      if (!pOk) prestArmedUntil = 0;
+      pb.disabled = !pOk;
+      pb.classList.toggle('armed', pArmed && pOk);
+      pb.textContent = (pArmed && pOk) ? 'Confirm prestige' : 'Prestige to stage ' + (ps + 1);
+      $('prestigeInfo').textContent = S.chal.active
+        ? 'Prestige is locked during a challenge.'
+        : 'Costs ' + fmt(pc) + ' tokens (you have ' + fmt(S.tokens) + '). Next stage: all output ×5, anomaly rewards ×5, token gain ×2, boost cap +5.';
+    }
+
     var nextE = e + 1, lastE = nextE >= ERA.length;
     var eArmed = Date.now() < eraArmedUntil;
     $('eraNext').textContent = lastE ? 'Final age reached' : ERA[nextE].name;
@@ -1942,7 +2013,7 @@ dl.stats dd.tok { color: var(--tok); }
         var ref = shopRefs[def.k], l = S.r[def.k], isMax = l >= def.max;
         ref.name.textContent = def.n;
         ref.lvl.textContent = l + '/' + def.max;
-        ref.eff.textContent = isMax ? 'Maxed out.' : def.d(l);
+        ref.eff.textContent = isMax ? 'Maxed out · ' + RB_CUR[def.k](l) : def.d(l);
         var pl = rbPlan(def);
         ref.bn.textContent = isMax ? 'MAX' : (pl.n > 1 ? '×' + pl.n + ' · ' : '') + fmt(pl.cost) + ' tokens';
         ref.btn.disabled = isMax || S.tokens < pl.cost;
@@ -1995,6 +2066,7 @@ dl.stats dd.tok { color: var(--tok); }
     ['spent', 'played', 'tokensEarned'].forEach(function (k) { f[k] = isFinite(Number(f[k])) ? Number(f[k]) : 0; });
     if (d.tokensEarned === undefined) f.tokensEarned = Math.max(f.tokens, 0);
     f.cheated = !!f.cheated;
+    f.prestige = Math.max(0, Math.min(5, Math.floor(Number(f.prestige)) || 0));
     var dc = d.chal || {};
     f.chal = { done: dc.done && typeof dc.done === 'object' ? dc.done : {}, active: dc.snap && CH.some(function (c) { return c.id === dc.active; }) ? dc.active : null, snap: dc.snap || null };
     if (!f.chal.active) f.chal.snap = null;
@@ -2048,7 +2120,7 @@ dl.stats dd.tok { color: var(--tok); }
   }
 
   function setSideTab(w) {
-    [['boost', 'boostPanel'], ['chal', 'chalPanel'], ['rebirth', 'shopPanel']].forEach(function (q) { $(q[1]).hidden = q[0] !== w; });
+    [['boost', 'boostPanel'], ['chal', 'chalPanel'], ['rebirth', 'shopPanel'], ['prestige', 'prestigePanel']].forEach(function (q) { $(q[1]).hidden = q[0] !== w; });
     document.querySelectorAll('#sideTabs .tab').forEach(function (b) { b.setAttribute('aria-selected', String(b.dataset.st === w)); });
   }
 
@@ -2095,6 +2167,7 @@ dl.stats dd.tok { color: var(--tok); }
     document.querySelectorAll('#sideTabs .tab').forEach(function (b) { b.addEventListener('click', function () { setSideTab(b.dataset.st); }); });
     setSideTab('boost');
     $('rebirthBtn').addEventListener('click', rebirth);
+    $('prestigeBtn').addEventListener('click', prestige);
     $('buyBest').addEventListener('click', buyBest);
     $('eraBtn').addEventListener('click', buyEra);
     $('autoToggle').addEventListener('click', function () { S.auto = !S.auto; update(); });
