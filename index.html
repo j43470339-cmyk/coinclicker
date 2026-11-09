@@ -207,11 +207,11 @@ dl.stats dd.tok { color: var(--tok); }
 
 /* Market */
 .modes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.mode, .seg-btn {
+.mode, .seg-btn, .vtab {
   background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 11px; cursor: pointer;
   font-family: var(--f-mono); font-size: .8rem; color: var(--mute);
 }
-.mode[aria-pressed="true"], .seg-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.mode[aria-pressed="true"], .seg-btn[aria-pressed="true"], .vtab[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
 .spacer { flex: 1; }
 .btn-ghost {
   background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 11px; cursor: pointer;
@@ -326,6 +326,28 @@ dl.stats dd.tok { color: var(--tok); }
 :root[data-vfx="off"] .bar i { transition: none; }
 :root[data-vfx="off"] .coin:active { transform: none; }
 
+.view-tabs { display: flex; gap: 6px; }
+.stage-view { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 100%; min-width: 0; }
+.mine-head { width: min(440px, 100%); display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mine-pot { font-family: var(--f-mono); font-weight: 700; font-size: 1.35rem; color: var(--accent); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mine-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.mine-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; width: min(440px, 100%); }
+.mtile {
+  aspect-ratio: 1; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+  font-family: var(--f-mono); font-weight: 700; font-size: 1rem; padding: 0; cursor: pointer; display: grid; place-items: center;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.mtile:hover:not(:disabled) { border-color: var(--accent); }
+.mtile:disabled { cursor: default; }
+.mtile.r { background: rgba(0,0,0,.3); border-color: transparent; }
+.mtile.n1 { color: var(--good); }
+.mtile.n2 { color: var(--accent); }
+.mtile.n3 { color: var(--warn); }
+.mtile.n4, .mtile.n5, .mtile.n6, .mtile.n7, .mtile.n8 { color: var(--bad); }
+.mtile.flag { color: var(--warn); }
+.mtile.mine { background: rgba(239,107,91,.16); color: var(--bad); border-color: transparent; }
+.mtile.boom { background: var(--bad); color: #20090a; }
+.mine-note { width: min(440px, 100%); }
 @media (prefers-reduced-motion: reduce) {
   .anomaly { animation: none; }
   .float, .toast { animation-duration: .01s; }
@@ -373,6 +395,10 @@ dl.stats dd.tok { color: var(--tok); }
     </aside>
 
     <main class="stage">
+      <div class="view-tabs" id="viewTabs">
+        <button class="vtab" data-view="coin" aria-pressed="true">Coin</button>
+        <button class="vtab" data-view="mine" aria-pressed="false">Vault Sweep</button>
+      </div>
       <div class="readout">
         <div class="balance" id="bal">0</div>
         <div class="currency" id="cur">Bronze Standard</div>
@@ -381,6 +407,7 @@ dl.stats dd.tok { color: var(--tok); }
           <span class="clk" id="clk">+1 <span>per tap</span></span>
         </div>
       </div>
+      <div class="stage-view" id="coinView">
       <div class="pad" id="pad">
         <button class="coin" id="coin" aria-label="Tap the coin to earn currency"><span class="coin-num" id="coinNum">I</span></button>
         <button class="anomaly" id="anomaly" hidden aria-label="Dark Matter anomaly. Click to collect."></button>
@@ -397,6 +424,23 @@ dl.stats dd.tok { color: var(--tok); }
       <div class="chal-banner" id="chalBanner" hidden></div>
       <div class="cap-alert" id="capAlert" hidden>Tap limit reached (15 per second)</div>
       <div class="hint">Hold the coin or hold Space to tap 5 times a second. An anomaly appears every 100 to 200 taps; catch it within 10 seconds.</div>
+      </div>
+
+      <div class="stage-view" id="mineView" hidden>
+        <div class="mine-head">
+          <div>
+            <div class="eyebrow">Vault Sweep pot</div>
+            <div class="mine-pot" id="minePot">0</div>
+          </div>
+          <div class="mine-actions">
+            <button class="btn-ghost" id="mineStart">Start round</button>
+            <button class="btn-ghost" id="mineCash" disabled>Cash out</button>
+            <button class="btn-ghost" id="mineFlag" aria-pressed="false">Flag: off</button>
+          </div>
+        </div>
+        <div class="mine-grid" id="mineGrid"></div>
+        <div class="hint mine-note" id="mineHint"></div>
+      </div>
     </main>
 
     <section class="market">
@@ -727,6 +771,8 @@ dl.stats dd.tok { color: var(--tok); }
       else if (kind === 'trophy') { [784, 988, 1175].forEach(function (f, n) { tone(f, 0.22, 'triangle', 0.3, n * 0.09); }); }
       else if (kind === 'era') { tone(330, 0.5, 'triangle', 0.35, 0, 660); tone(660, 0.35, 'triangle', 0.3, 0.35, 990); }
       else if (kind === 'rebirth') { tone(180, 0.7, 'sawtooth', 0.2, 0, 900); tone(900, 0.45, 'sine', 0.3, 0.55); }
+      else if (kind === 'pop') tone(620 + Math.random() * 120, 0.06, 'square', 0.1, 0, 420);
+      else if (kind === 'boom') tone(150, 0.45, 'sawtooth', 0.3, 0, 40);
     } catch (err) {}
   }
   /* ---------- Leaderboards (shared store, one document per player) ---------- */
@@ -1176,14 +1222,14 @@ dl.stats dd.tok { color: var(--tok); }
   ];
 
   var RB = [
-    { k: 'coin',  n: 'Coin Evolution Matrix', b: 5, m: 5, max: 30, d: function (l) { return 'Tap power ×' + fmt(Math.pow(2, l)) + ' → ×' + fmt(Math.pow(2, l + 1)); } },
+    { k: 'coin',  n: 'Coin Evolution Matrix', b: 5, m: 5, max: 30, d: function (l) { return 'Tap power and income ×' + fmt(Math.pow(2, l)) + ' → ×' + fmt(Math.pow(2, l + 1)); } },
     { k: 'eff',   n: 'Temporal Catalyst',     b: 5,  m: 1.7, max: 30, d: function (l) { return 'All upgrade output +' + (l * 20) + '% → +' + ((l + 1) * 20) + '%'; } },
     { k: 'fort',  n: 'Anomaly Capacitor',     b: 8,  m: 1.8, max: 30, d: function (l) { return 'Anomaly reward ×' + (1 + l * 1.5) + ' → ×' + (1 + (l + 1) * 1.5); } },
     { k: 'start', n: 'Head Start',            b: 6,  m: 2.0, max: 20, d: function (l) { if (S.chal && S.chal.active) return 'Disabled during challenges'; return 'Start with ' + fmt(headCash(l)) + ' → ' + fmt(headCash(l + 1)); } },
     { k: 'limit', n: 'Boost Limit',          b: 10, m: 3,   max: 10, d: function (l) { return 'Boost level cap ' + (BOOST_BASE_CAP + 5 * S.prestige + l * BOOST_CAP_STEP) + ' → ' + (BOOST_BASE_CAP + 5 * S.prestige + (l + 1) * BOOST_CAP_STEP); } }
   ];
   var RB_CUR = {
-    coin:  function (l) { return 'Tap power ×' + fmt(Math.pow(2, l)); },
+    coin:  function (l) { return 'Tap power and income ×' + fmt(Math.pow(2, l)); },
     eff:   function (l) { return 'All upgrade output +' + (l * 20) + '%'; },
     fort:  function (l) { return 'Anomaly reward ×' + (1 + l * 1.5); },
     start: function (l) { return S.chal && S.chal.active ? 'Disabled during challenges' : 'Start with ' + fmt(headCash(l)); },
@@ -1292,6 +1338,11 @@ dl.stats dd.tok { color: var(--tok); }
     T('Boosts', 'bstset', 'Complete Set',    'Own at least one level of every boost.',    function () { return S.boost.every(function (l) { return l > 0; }); }),
     T('Boosts', 'bst10',  'Fully Boosted',   'Take every boost to level 10.',             function () { return S.boost.every(function (l) { return l >= 10; }); }),
     T('Boosts', 'bst30',  'Maxed Out',       'Take any boost to level 30.',               function () { return S.boost.some(function (l) { return l >= 30; }); }),
+    // Vault Sweep
+    T('Vault Sweep', 'mg1',  'First Dig',     'Cash out of a Vault Sweep round.',   function () { return S.mg.cashed >= 1; }),
+    T('Vault Sweep', 'mgw1', 'Clean Sweep',   'Clear a whole Vault Sweep board.',   function () { return S.mg.wins >= 1; }),
+    T('Vault Sweep', 'mgw5', 'Bomb Squad',    'Clear 5 Vault Sweep boards.',        function () { return S.mg.wins >= 5; }),
+    T('Vault Sweep', 'mgr25','Regular',       'Start 25 Vault Sweep rounds.',       function () { return S.mg.rounds >= 25; }),
     // Misc
     T('Misc', 'away',    'Patient Ruler',    'Come back after being away for an hour.',   function () { return S.awayMax >= 3600; }),
     T('Misc', 'night',   'Night Owl',        'Play between midnight and 5 AM.',           function () { return new Date().getHours() < 5; }),
@@ -1311,7 +1362,7 @@ dl.stats dd.tok { color: var(--tok); }
       r: { coin: 0, eff: 0, fort: 0, start: 0, limit: 0 },
       era: 0,
       auto: false, autoOwned: false, mode: 1, bmode: 1, rmode: 1,
-      ach: {}, dmCaught: 0, awayMax: 0, boost: BOOST.map(function () { return 0; }), head: 0, bestRun: 0, spent: 0, played: 0, tokensEarned: 0, cheated: false, chal: { done: {}, active: null, snap: null }, prestige: 0, t: Date.now()
+      ach: {}, dmCaught: 0, awayMax: 0, boost: BOOST.map(function () { return 0; }), head: 0, bestRun: 0, spent: 0, played: 0, tokensEarned: 0, cheated: false, chal: { done: {}, active: null, snap: null }, prestige: 0, mg: { next: 0, rounds: 0, wins: 0, cashed: 0 }, t: Date.now()
     };
   }
   var S = fresh();
@@ -1388,7 +1439,7 @@ dl.stats dd.tok { color: var(--tok); }
     for (var k = 0; k < MS.length; k++) if (MS[k] > L) return MS[k];
     return (Math.floor(L / 100) + 1) * 100;
   }
-  function globalMult() { return (1 + 0.2 * S.r.eff) * (1 + BOOST_STEP * S.boost[0]) * eraMult() * trophyMult() * chalMult() * chalProd() * prestMult() * PACE; }
+  function globalMult() { return Math.pow(2, S.r.coin) * (1 + 0.2 * S.r.eff) * (1 + BOOST_STEP * S.boost[0]) * eraMult() * trophyMult() * chalMult() * chalProd() * prestMult() * PACE; }
   function cps() {
     var t = 0;
     for (var i = 0; i < UP.length; i++) t += UP[i].cps * S.levels[i] * msMult(i);
@@ -2059,6 +2110,8 @@ dl.stats dd.tok { color: var(--tok); }
     Object.keys(f).forEach(function (k) { if (d[k] !== undefined) f[k] = d[k]; });
     f.levels = UP.map(function (_, i) { return Number(d.levels && d.levels[i]) || 0; });
     f.r = Object.assign({ coin: 0, eff: 0, fort: 0, start: 0, limit: 0 }, d.r || {});
+    f.mg = Object.assign({ next: 0, rounds: 0, wins: 0, cashed: 0 }, d.mg || {});
+    ['next', 'rounds', 'wins', 'cashed'].forEach(function (k) { f.mg[k] = isFinite(Number(f.mg[k])) ? Number(f.mg[k]) : 0; });
     if (d.era === undefined) {
       f.era = 0;
       for (var q = 1; q < 5; q++) if ((Number(d.run) || 0) + (Number(d.head) || 0) >= ERA_COST[q]) f.era = q;
@@ -2127,6 +2180,168 @@ dl.stats dd.tok { color: var(--tok); }
     document.querySelectorAll('#sideTabs .tab').forEach(function (b) { b.setAttribute('aria-selected', String(b.dataset.st === w)); });
   }
 
+  /* ---------- Vault Sweep (minesweeper-style mini game) ---------- */
+  var MG = { w: 7, h: 7, mines: 8, cool: 60000 };
+  var mg = { open: false, on: false, over: false, started: false, cells: null, mines: null, pot: 0, revealed: 0, flag: false, boom: -1, msg: '' };
+  var holdStopRef = null;
+  function mgNeighbors(i) {
+    var x = i % MG.w, y = Math.floor(i / MG.w), out = [];
+    for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      var nx = x + dx, ny = y + dy;
+      if (nx >= 0 && ny >= 0 && nx < MG.w && ny < MG.h) out.push(ny * MG.w + nx);
+    }
+    return out;
+  }
+  function mgUnit() { return Math.max(cps() * 0.4, click() * 2, 1); }
+  function mgWait() { return Math.max(0, (S.mg.next || 0) - Date.now()); }
+  function mgSafeTotal() { return MG.w * MG.h - MG.mines; }
+
+  function mgStart() {
+    if (mg.on || mgWait() > 0 || S.chal.active) return;
+    S.mg.next = Date.now() + MG.cool;
+    S.mg.rounds++;
+    mg.on = true; mg.over = false; mg.started = false; mg.pot = 0; mg.revealed = 0; mg.mines = null; mg.boom = -1; mg.msg = '';
+    mg.cells = [];
+    for (var i = 0; i < MG.w * MG.h; i++) mg.cells.push({ r: false, f: false, n: 0 });
+    save(); mgDraw(); mgStatus();
+  }
+  function mgPlace(first) {
+    var ban = mgNeighbors(first).concat([first]), pool = [], i;
+    for (i = 0; i < MG.w * MG.h; i++) if (ban.indexOf(i) < 0) pool.push(i);
+    mg.mines = {};
+    for (var m = 0; m < MG.mines; m++) {
+      var k = Math.floor(Math.random() * pool.length);
+      mg.mines[pool[k]] = true; pool.splice(k, 1);
+    }
+    mg.cells.forEach(function (c, idx) { c.n = mgNeighbors(idx).filter(function (j) { return mg.mines[j]; }).length; });
+    mg.started = true;
+  }
+  function mgReveal(i) {
+    if (!mg.on || mg.over) return;
+    var c = mg.cells[i];
+    if (c.r || c.f) return;
+    if (!mg.started) mgPlace(i);
+    if (mg.mines[i]) { mgBust(i); return; }
+    var u = mgUnit(), stack = [i];
+    while (stack.length) {
+      var j = stack.pop(), cj = mg.cells[j];
+      if (cj.r || cj.f) continue;
+      cj.r = true; mg.revealed++;
+      mg.pot += u * (1 + 0.1 * mg.revealed);
+      if (cj.n === 0) mgNeighbors(j).forEach(function (k) { if (!mg.cells[k].r) stack.push(k); });
+    }
+    sfx('pop');
+    if (mg.revealed >= mgSafeTotal()) mgWin(); else { mgDraw(); mgStatus(); }
+  }
+  function mgFlag(i) {
+    if (!mg.on || mg.over || !mg.cells) return;
+    var c = mg.cells[i];
+    if (c.r) return;
+    c.f = !c.f;
+    mgDraw(); mgStatus();
+  }
+  function mgBank(extraTokens) {
+    var pot = mg.pot;
+    S.bal += pot; S.run += pot; S.life += pot;
+    if (extraTokens) { S.tokens += extraTokens; S.tokensEarned += extraTokens; }
+    S.mg.cashed++;
+    mg.on = false; mg.over = true;
+    update();
+  }
+  function mgCash() {
+    if (!mg.on || mg.over || mg.pot <= 0) return;
+    var pot = mg.pot;
+    mgBank(0);
+    mg.msg = 'Cashed out ' + fmt(pot) + '.';
+    toast('<b>Vault Sweep.</b> Cashed out ' + fmt(pot) + '.');
+    sfx('catch'); mgDraw(); mgStatus();
+  }
+  function mgWin() {
+    mg.pot *= 2;
+    var tk = Math.max(1, Math.ceil(tokensNow() * 0.02)), pot = mg.pot;
+    S.mg.wins++;
+    mgBank(tk);
+    mg.msg = 'Vault cleared. Doubled pot of ' + fmt(pot) + ' and ' + fmt(tk) + (tk === 1 ? ' token.' : ' tokens.');
+    toast('<b>Vault cleared.</b> +' + fmt(pot) + ' and ' + fmt(tk) + (tk === 1 ? ' token' : ' tokens'));
+    sfx('trophy'); mgDraw(); mgStatus();
+  }
+  function mgBust(i) {
+    var lost = mg.pot;
+    mg.on = false; mg.over = true; mg.boom = i; mg.pot = 0;
+    mg.msg = 'Boom. You lost the pot of ' + fmt(lost) + '.';
+    toast('<b>Vault Sweep.</b> A trap went off. You lost ' + fmt(lost) + '.');
+    sfx('boom'); mgDraw(); mgStatus();
+  }
+  function mgDraw() {
+    var grid = $('mineGrid');
+    grid.innerHTML = '';
+    var n = MG.w * MG.h;
+    for (var i = 0; i < n; i++) {
+      var c = mg.cells ? mg.cells[i] : null;
+      var b = document.createElement('button');
+      b.className = 'mtile';
+      b.dataset.i = String(i);
+      var txt = '';
+      if (c && c.r) { b.className += ' r' + (c.n ? ' n' + c.n : ''); txt = c.n ? String(c.n) : ''; b.disabled = true; }
+      else if (mg.over && mg.mines && mg.mines[i]) { b.className += ' mine' + (i === mg.boom ? ' boom' : ''); txt = '✸'; b.disabled = true; }
+      else if (c && c.f) { b.className += ' flag'; txt = '⚑'; }
+      if (!mg.on) b.disabled = true;
+      b.textContent = txt;
+      b.setAttribute('aria-label', c && c.r ? (c.n ? c.n + ' traps nearby' : 'Empty') : (c && c.f ? 'Flagged tile' : 'Hidden tile'));
+      grid.appendChild(b);
+    }
+  }
+  function mgStatus() {
+    if (!mg.open) return;
+    var w = mgWait(), startBtn = $('mineStart'), cashBtn = $('mineCash');
+    $('minePot').textContent = fmt(mg.pot);
+    var label;
+    if (S.chal.active) label = 'Off during challenges';
+    else if (mg.on) label = 'Round in progress';
+    else if (w > 0) label = 'Next round in ' + Math.ceil(w / 1000) + 's';
+    else label = 'Start round';
+    startBtn.textContent = label;
+    startBtn.disabled = mg.on || w > 0 || !!S.chal.active;
+    cashBtn.textContent = mg.on && mg.pot > 0 ? 'Cash out ' + fmt(mg.pot) : 'Cash out';
+    cashBtn.disabled = !(mg.on && !mg.over && mg.pot > 0);
+    $('mineFlag').textContent = 'Flag: ' + (mg.flag ? 'on' : 'off');
+    $('mineFlag').setAttribute('aria-pressed', String(mg.flag));
+    var hint;
+    if (mg.msg) hint = mg.msg;
+    else if (mg.on) hint = mg.revealed + ' of ' + mgSafeTotal() + ' safe tiles found. Numbers count the traps touching a tile. Each safe tile pays more than the last.';
+    else hint = 'Reveal safe tiles to build a pot. Numbers count the traps touching a tile (' + MG.mines + ' hidden in ' + (MG.w * MG.h) + '). Right-click or use Flag to mark a trap. Cash out any time, but a trap wipes the pot. The first tile is always safe.';
+    $('mineHint').textContent = hint;
+  }
+  function setView(v) {
+    var mine = v === 'mine';
+    if (holdStopRef) holdStopRef();
+    mg.open = mine;
+    $('coinView').hidden = mine;
+    $('mineView').hidden = !mine;
+    document.querySelectorAll('.vtab').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === v)); });
+    if (mine) { mgDraw(); mgStatus(); }
+  }
+  function initMine() {
+    document.querySelectorAll('.vtab').forEach(function (b) { b.addEventListener('click', function () { setView(b.dataset.view); }); });
+    $('mineStart').addEventListener('click', mgStart);
+    $('mineCash').addEventListener('click', mgCash);
+    $('mineFlag').addEventListener('click', function () { mg.flag = !mg.flag; mgStatus(); });
+    var grid = $('mineGrid');
+    grid.addEventListener('click', function (e) {
+      var t = e.target.closest ? e.target.closest('.mtile') : null;
+      if (!t || t.disabled) return;
+      var i = Number(t.dataset.i);
+      if (mg.flag) mgFlag(i); else mgReveal(i);
+    });
+    grid.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      var t = e.target.closest ? e.target.closest('.mtile') : null;
+      if (t && !t.disabled) mgFlag(Number(t.dataset.i));
+    });
+    mgDraw();
+  }
+
   function init() {
     var loaded = load();
     var away = 0;
@@ -2146,6 +2361,7 @@ dl.stats dd.tok { color: var(--tok); }
       holdEv = ev ? { clientX: ev.clientX, clientY: ev.clientY } : null;
       holdT = setInterval(function () { doClick(holdEv); }, 200);
     }
+    holdStopRef = holdStop;
     var coinEl = $('coin');
     coinEl.addEventListener('pointerdown', function (e) {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -2158,7 +2374,7 @@ dl.stats dd.tok { color: var(--tok); }
       if (e.code !== 'Space') return;
       var tag = e.target && e.target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'SUMMARY') return;
-      if (!$('settingsOverlay').hidden || !$('boardOverlay').hidden) return;
+      if (!$('settingsOverlay').hidden || !$('boardOverlay').hidden || mg.open) return;
       e.preventDefault();
       if (e.repeat || spaceDown) return;
       holdStart(null);
@@ -2167,6 +2383,7 @@ dl.stats dd.tok { color: var(--tok); }
     document.addEventListener('keyup', function (e) { if (e.code === 'Space' && spaceDown) { e.preventDefault(); holdStop(); } });
     window.addEventListener('blur', holdStop);
     $('anomaly').addEventListener('click', catchAnomaly);
+    initMine();
     document.querySelectorAll('#sideTabs .tab').forEach(function (b) { b.addEventListener('click', function () { setSideTab(b.dataset.st); }); });
     setSideTab('boost');
     $('rebirthBtn').addEventListener('click', rebirth);
@@ -2308,6 +2525,7 @@ dl.stats dd.tok { color: var(--tok); }
       if (S.run > S.bestRun) S.bestRun = S.run;
       checkAch();
       update();
+      mgStatus();
     }, 100);
   }
 
