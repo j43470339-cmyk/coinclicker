@@ -639,8 +639,8 @@ dl.stats dd.tok { color: var(--tok); }
   var actx = null;
   // Leaderboard backend for when the game is hosted outside claude.ai (for example GitHub Pages).
   // Create a free Supabase project, run the SQL from the setup notes, then paste its URL and anon key here.
-  var LB_URL = '';   // e.g. 'https://abcdxyz.supabase.co'
-  var LB_KEY = '';   // the project's public anon key
+  var LB_URL = 'https://sfafhigzdgjsjefwmmnh.supabase.co';
+  var LB_KEY = 'sb_publishable_jVoYucStz31h9S6uev3qEA_5DIxhcDF';   // public key, safe to ship
 
   function loadSettings() {
     try {
@@ -782,7 +782,10 @@ dl.stats dd.tok { color: var(--tok); }
     if (lb.mode !== 'rest') return;
     var timer = setTimeout(function () { lb.slow = true; renderBoards(); }, 10000);
     fetch(LB_URL + '/rest/v1/scores?select=id,name,tokens,currency,played,spent&limit=1000', { headers: hdr(null, false) })
-      .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+      .then(function (r) {
+        if (r.ok) return r.json();
+        return r.text().then(function (t) { var e = new Error('HTTP ' + r.status); e.body = t; throw e; });
+      })
       .then(function (rows) {
         clearTimeout(timer); lb.slow = false; lb.err = null; lb.ready = true;
         lb.rows = rows.map(function (x) {
@@ -790,7 +793,13 @@ dl.stats dd.tok { color: var(--tok); }
         });
         renderBoards();
       })
-      .catch(function () { clearTimeout(timer); lb.err = 'error'; renderBoards(); });
+      .catch(function (e) {
+        clearTimeout(timer); lb.err = 'error';
+        lb.errText = (e && e.message) || 'network error';
+        if (e && e.body && /PGRST205|schema cache|does not exist/i.test(e.body)) lb.errText = 'the scores table is missing, so run the setup SQL in Supabase';
+        else if (e && /HTTP 40[13]/.test(e.message || '')) lb.errText = 'Supabase rejected the key or the table permissions';
+        renderBoards();
+      });
   }
   function doAuth(signup) {
     var u = $('acUser').value.trim().toLowerCase(), pw = $('acPass').value;
@@ -798,7 +807,11 @@ dl.stats dd.tok { color: var(--tok); }
     if (pw.length < 6) { cloudMsg('Your password needs at least 6 characters.'); return; }
     cloudMsg(signup ? 'Creating your account…' : 'Logging in…');
     authReq(signup ? 'signup' : 'token?grant_type=password', { email: acEmail(u), password: pw }).then(function (x) {
-      if (!x.ok) { cloudMsg(x.j.msg || x.j.error_description || x.j.message || 'That did not work. Check your details.'); return; }
+      if (!x.ok) {
+        var em = x.j.msg || x.j.error_description || x.j.message || 'That did not work. Check your details.';
+        if (signup && /email/i.test(em)) em += ' (If this keeps happening, turn off "Confirm email" in Supabase under Authentication.)';
+        cloudMsg(em); return;
+      }
       if (!x.j.access_token) { cloudMsg('Sign-up needs "Confirm email" switched off in your Supabase settings.'); return; }
       setSession(x.j, u);
       $('acPass').value = '';
@@ -886,9 +899,7 @@ dl.stats dd.tok { color: var(--tok); }
     $('cloudLoad').addEventListener('click', cloudLoad);
     if (!window.claude || !window.claude.use) {
       if (LB_URL && LB_KEY) { initRestBoard(); return; }
-      $('acctInfo').parentNode.hidden = true;
       lb.state = 'off';
-      $('boardOpen').hidden = true;
       $('setBoard').closest('.set-group').hidden = true;
       return;
     }
@@ -926,7 +937,7 @@ dl.stats dd.tok { color: var(--tok); }
     $('cloudSave').disabled = !ok;
     $('cloudLoad').disabled = !ok;
     if (lb.state === 'init') { info.textContent = 'Checking your account…'; return; }
-    if (lb.state === 'off') { info.textContent = 'Accounts only work when this page is opened from claude.ai.'; cloudMsg(''); return; }
+    if (lb.state === 'off') { info.textContent = 'Accounts are not set up on this site yet (see the LB_URL and LB_KEY lines in the game file).'; cloudMsg(''); return; }
     if (!lb.uid) { info.textContent = 'You are not signed in to claude.ai, so cloud saves are off.'; cloudMsg(''); return; }
     lb.user.me().then(function (me) {
       info.textContent = 'Signed in as ' + (me.name || 'your claude.ai account') + '. Cloud saves are private to this account.';
@@ -981,8 +992,8 @@ dl.stats dd.tok { color: var(--tok); }
     if ($('boardOverlay').hidden) return;
     var msg;
     if (lb.state === 'init') msg = 'Connecting…';
-    else if (lb.state === 'off') msg = 'Leaderboards are not available in this view.';
-    else if (lb.err) msg = 'Could not load the leaderboard. Try reopening the page.';
+    else if (lb.state === 'off') msg = 'Leaderboards are not set up on this site yet. The site owner needs to add the Supabase URL and key near the top of the game file (LB_URL and LB_KEY).';
+    else if (lb.err) msg = 'Could not load the leaderboard' + (lb.errText ? ' (' + lb.errText + ')' : '') + '. Try reopening the page.';
     else if (!lb.ready) msg = lb.slow ? 'Still connecting. Scores may be out of date.' : 'Loading scores…';
     else if (S.cheated) msg = 'You used the operator console on this save, so your scores are not submitted. Wiping the save lets you compete again.';
     else if (lb.mode === 'rest' && !lb.uid) msg = 'Log in from Settings to appear on the leaderboards.';
