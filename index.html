@@ -333,6 +333,7 @@ dl.stats dd.tok { color: var(--tok); }
 }
 .chal-banner{width:min(440px,100%);background:var(--tok);color:var(--tok-ink);font-weight:700;font-size:.85rem;padding:6px 14px;border-radius:6px;text-align:center}
 .coin{touch-action:manipulation}
+#lbName{background:rgba(0,0,0,.28);border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:7px 10px;font:inherit;min-width:0;flex:1 1 160px;user-select:text;-webkit-user-select:text}
 </style>
 
 <div class="app">
@@ -558,6 +559,10 @@ dl.stats dd.tok { color: var(--tok); }
       <button class="btn-ghost" id="boardClose">Close</button>
     </div>
     <p class="board-status" id="boardStatus">Connecting…</p>
+    <div class="devrow" id="lbNameRow" hidden>
+      <input id="lbName" maxlength="20" placeholder="Your name" aria-label="Leaderboard name" autocomplete="off" spellcheck="false">
+      <button class="btn-ghost" id="lbNameSave">Save name</button>
+    </div>
     <div class="board-grid" id="boardGrid"></div>
   </div>
 </div>
@@ -626,6 +631,10 @@ dl.stats dd.tok { color: var(--tok); }
   var SET_KEY = 'chronos-evolution-settings';
   var settings = { vfx: true, sfx: true, volume: 60, notation: 'letters', board: true };
   var actx = null;
+  // Leaderboard backend for when the game is hosted outside claude.ai (for example GitHub Pages).
+  // Create a free Supabase project, run the SQL from the setup notes, then paste its URL and anon key here.
+  var LB_URL = 'https://sfafhigzdgjsjefwmmnh.supabase.co';   // e.g. 'https://abcdxyz.supabase.co'
+  var LB_KEY = 'sb_publishable_jVoYucStz31h9S6uev3qEA_5DIxhcDF';   // the project's public anon key
 
   function loadSettings() {
     try {
@@ -697,7 +706,7 @@ dl.stats dd.tok { color: var(--tok); }
     } catch (err) {}
   }
   /* ---------- Leaderboards (shared store, one document per player) ---------- */
-  var lb = { state: 'init', db: null, user: null, uid: null, canWrite: true, rows: [], ready: false, slow: false, err: null, lastSig: '', writing: false, rt: 0 };
+  var lb = { state: 'init', db: null, user: null, uid: null, canWrite: true, rows: [], ready: false, slow: false, err: null, lastSig: '', writing: false, rt: 0, mode: '', name: '' };
   function fmtPlayed(sec) {
     sec = Math.floor(sec);
     var d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
@@ -714,7 +723,73 @@ dl.stats dd.tok { color: var(--tok); }
   ];
   function myScores() { return { tokens: S.tokensEarned, currency: S.life, played: Math.floor(S.played), spent: S.spent }; }
 
+  /* Hosted leaderboard (Supabase REST, one row per player, no sign-in) */
+  function lbHeaders(json) {
+    var h = { apikey: LB_KEY };
+    if (json) { h['Content-Type'] = 'application/json'; h.Prefer = 'resolution=merge-duplicates,return=minimal'; }
+    return h;
+  }
+  function postRow(row) {
+    return fetch(LB_URL + '/rest/v1/scores?on_conflict=id', { method: 'POST', headers: lbHeaders(true), body: JSON.stringify(row) });
+  }
+  function submitRest() {
+    if (!lb.uid || !lb.name || S.cheated || !settings.board || lb.writing || document.hidden) return;
+    var sc = myScores();
+    if (![sc.tokens, sc.currency, sc.played, sc.spent].every(function (x) { return isFinite(x); })) return;
+    var sig = JSON.stringify([lb.name, sc.tokens, Math.floor(sc.currency), sc.played, Math.floor(sc.spent)]);
+    if (sig === lb.lastSig) return;
+    lb.writing = true;
+    postRow({ id: lb.uid, name: lb.name, tokens: sc.tokens, currency: sc.currency, played: sc.played, spent: sc.spent }).then(function (r) {
+      lb.writing = false;
+      if (r.ok) lb.lastSig = sig;
+    }, function () { lb.writing = false; });
+  }
+  function fetchRows() {
+    if (lb.mode !== 'rest') return;
+    var timer = setTimeout(function () { lb.slow = true; renderBoards(); }, 10000);
+    fetch(LB_URL + '/rest/v1/scores?select=id,name,tokens,currency,played,spent&limit=1000', { headers: lbHeaders(false) })
+      .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+      .then(function (rows) {
+        clearTimeout(timer); lb.slow = false; lb.err = null; lb.ready = true;
+        lb.rows = rows.map(function (x) {
+          return { id: x.id, name: String(x.name || 'Someone'), tokens: Number(x.tokens) || 0, currency: Number(x.currency) || 0, played: Number(x.played) || 0, spent: Number(x.spent) || 0 };
+        });
+        renderBoards();
+      })
+      .catch(function () { clearTimeout(timer); lb.err = 'error'; renderBoards(); });
+  }
+  function saveName() {
+    var v = $('lbName').value.replace(/\s+/g, ' ').trim().slice(0, 20);
+    if (!v) return;
+    lb.name = v;
+    try { localStorage.setItem('coin-clicker-name', v); } catch (err) {}
+    $('lbName').value = v;
+    lb.lastSig = '';
+    submitScore();
+    setTimeout(fetchRows, 900);
+    renderBoards();
+  }
+  function initRestBoard() {
+    LB_URL = LB_URL.replace(/\/+$/, '');
+    lb.mode = 'rest'; lb.state = 'on'; lb.canWrite = true;
+    try {
+      var pid = localStorage.getItem('coin-clicker-pid');
+      if (!pid) { pid = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); localStorage.setItem('coin-clicker-pid', pid); }
+      lb.uid = pid;
+      lb.name = localStorage.getItem('coin-clicker-name') || '';
+    } catch (err) { lb.uid = null; }
+    $('lbNameRow').hidden = false;
+    $('lbName').value = lb.name;
+    $('lbNameSave').addEventListener('click', saveName);
+    $('lbName').addEventListener('keydown', function (e) { if (e.key === 'Enter') saveName(); });
+    fetchRows();
+    submitScore();
+    setInterval(submitScore, 90000);
+    setInterval(function () { if (!$('boardOverlay').hidden) fetchRows(); }, 30000);
+  }
+
   function submitScore() {
+    if (lb.mode === 'rest') return submitRest();
     if (!lb.db || !lb.uid || !lb.canWrite || S.cheated || !settings.board || lb.writing || document.hidden) return;
     var sc = myScores();
     if (![sc.tokens, sc.currency, sc.played, sc.spent].every(function (x) { return isFinite(x); })) return;
@@ -738,9 +813,10 @@ dl.stats dd.tok { color: var(--tok); }
     $('cloudSave').addEventListener('click', cloudSave);
     $('cloudLoad').addEventListener('click', cloudLoad);
     if (!window.claude || !window.claude.use) {
+      $('acctInfo').parentNode.hidden = true;
+      if (LB_URL && LB_KEY) { initRestBoard(); return; }
       lb.state = 'off';
       $('boardOpen').hidden = true;
-      $('acctInfo').parentNode.hidden = true;
       $('setBoard').closest('.set-group').hidden = true;
       return;
     }
@@ -834,6 +910,8 @@ dl.stats dd.tok { color: var(--tok); }
     else if (lb.err) msg = 'Could not load the leaderboard. Try reopening the page.';
     else if (!lb.ready) msg = lb.slow ? 'Still connecting. Scores may be out of date.' : 'Loading scores…';
     else if (S.cheated) msg = 'You used the operator console on this save, so your scores are not submitted. Wiping the save lets you compete again.';
+    else if (lb.mode === 'rest' && !lb.uid) msg = 'Your browser is blocking storage, so scores cannot be submitted.';
+    else if (lb.mode === 'rest' && !lb.name) msg = 'Enter a name below to appear on the leaderboards.';
     else if (!lb.uid) msg = 'Sign in to appear on the leaderboards.';
     else if (!lb.canWrite) msg = 'You have view-only access, so your scores are not submitted.';
     else if (!settings.board) msg = 'You are hidden from the leaderboards. Turn this on in Settings.';
@@ -849,7 +927,9 @@ dl.stats dd.tok { color: var(--tok); }
     var ids = [];
     sets.forEach(function (all) { all.slice(0, 10).forEach(function (r) { if (ids.indexOf(r.id) < 0) ids.push(r.id); }); });
     var token = ++lb.rt;
-    var pp = ids.length && lb.user ? lb.user.profiles(ids) : Promise.resolve({});
+    var pp;
+    if (lb.mode === 'rest') { var nm0 = {}; lb.rows.forEach(function (r) { nm0[r.id] = { name: r.name }; }); pp = Promise.resolve(nm0); }
+    else pp = ids.length && lb.user ? lb.user.profiles(ids) : Promise.resolve({});
     pp.then(function (ps) {
       if (token !== lb.rt || $('boardOverlay').hidden) return;
       grid.innerHTML = '';
@@ -869,7 +949,7 @@ dl.stats dd.tok { color: var(--tok); }
           var nm = (ps[r.id] && ps[r.id].name) || (me ? 'You' : 'Someone');
           ol.appendChild(boardRow(i + 1, me ? nm + ' (you)' : nm, b.f(r[b.k]), me ? 'me' : ''));
         });
-        if (!inTop && lb.uid && lb.canWrite && settings.board && !S.cheated && mine[b.k] > 0) {
+        if (!inTop && lb.uid && lb.canWrite && settings.board && !S.cheated && mine[b.k] > 0 && (lb.mode !== 'rest' || lb.name)) {
           var rank = all.filter(function (r) { return r.id !== lb.uid && r[b.k] > mine[b.k]; }).length + 1;
           ol.appendChild(boardRow(rank, 'You', b.f(mine[b.k]), 'me you-row'));
         }
@@ -877,7 +957,7 @@ dl.stats dd.tok { color: var(--tok); }
       });
     });
   }
-  function openBoards() { $('boardOverlay').hidden = false; $('boardClose').focus(); renderBoards(); }
+  function openBoards() { $('boardOverlay').hidden = false; $('boardClose').focus(); renderBoards(); if (lb.mode === 'rest') { submitScore(); fetchRows(); } }
   function closeBoards() { $('boardOverlay').hidden = true; $('boardOpen').focus(); }
 
   function openSettings() { $('settingsOverlay').hidden = false; $('setClose').focus(); refreshAccount(); }
@@ -900,7 +980,8 @@ dl.stats dd.tok { color: var(--tok); }
     $('setBoard').addEventListener('change', function () {
       settings.board = $('setBoard').checked; saveSettings(); applySettings();
       if (!settings.board) {
-        if (lb.db && lb.uid) { try { lb.db.doc('scores/' + lb.uid).delete().catch(function () {}); } catch (err) {} }
+        if (lb.mode === 'rest') { if (lb.name && lb.uid) postRow({ id: lb.uid, name: lb.name, tokens: 0, currency: 0, played: 0, spent: 0 }).catch(function () {}); }
+        else if (lb.db && lb.uid) { try { lb.db.doc('scores/' + lb.uid).delete().catch(function () {}); } catch (err) {} }
         lb.lastSig = '';
       } else submitScore();
       renderBoards();
