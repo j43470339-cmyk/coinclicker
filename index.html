@@ -2500,7 +2500,7 @@ dl.stats dd.tok { color: var(--tok); }
     applyEra(eraIdx());
     update();
 
-    if (away > 60) {
+    if (away > 5) {
       var gain = cps() * away;
       if (gain > 0) {
         S.bal += gain; S.run += gain; S.life += gain;
