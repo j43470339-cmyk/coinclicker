@@ -1208,7 +1208,7 @@ dl.stats dd.tok { color: var(--tok); }
     { n: 'Infinity Engine',   b: 2e17,   cps: 1.3e15, clk: 4e13,  d: 'Never stops. Never needs to.' }
   ];
 
-  var CPS_BONUS = 100;                          // per-second upgrades are this many times stronger
+  var CPS_BONUS = 5;                          // per-second upgrades are this many times stronger
   UP.forEach(function (u) { u.cps *= CPS_BONUS; });
 
   var BOOST_STEP = 0.1;
