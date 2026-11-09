@@ -2181,7 +2181,7 @@ dl.stats dd.tok { color: var(--tok); }
   }
 
   /* ---------- Vault Sweep (minesweeper-style mini game) ---------- */
-  var MG = { w: 7, h: 7, mines: 8, cool: 60000 };
+  var MG = { w: 7, h: 7, mines: 8, cool: 5000 };
   var mg = { open: false, on: false, over: false, started: false, cells: null, mines: null, pot: 0, revealed: 0, flag: false, boom: -1, msg: '' };
   var holdStopRef = null;
   function mgNeighbors(i) {
@@ -2500,7 +2500,7 @@ dl.stats dd.tok { color: var(--tok); }
     applyEra(eraIdx());
     update();
 
-    if (away > 5) {
+    if (away > 60) {
       var gain = cps() * away;
       if (gain > 0) {
         S.bal += gain; S.run += gain; S.life += gain;
